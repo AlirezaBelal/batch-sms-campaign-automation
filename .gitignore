@@ -1,0 +1,50 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE specific files
+.idea/
+.vscode/
+*.sublime-*
+
+# Logs and databases
+*.log
+logs/
+*.sqlite
+*.db
+
+# Environmental variables
+.env
+.env.*
+
+# Local configuration
+config.local.py
+
+# CSV data files - may contain sensitive information
+data/
+*.csv
+
+# Authentication credentials
+credentials.json
+*_credentials.*
+
+# Temporary files
+*.tmp
+.DS_Store
+
+# Local testing files
+test_local*
+
+# Generated reports
+reports/
