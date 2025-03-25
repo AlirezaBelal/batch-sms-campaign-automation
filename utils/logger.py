@@ -3,7 +3,6 @@ Logging utility for the SMS sending application
 """
 import logging
 import os
-from datetime import datetime
 
 
 def setup_logger():

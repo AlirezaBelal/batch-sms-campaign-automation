@@ -2,8 +2,8 @@
 Main application entry point for the SMS sending application
 """
 import csv
-import time
 import os
+import time
 
 from config import (
     SERVER_ADDRESS, USERNAME, PASSWORD, API_ENDPOINT,
@@ -19,11 +19,11 @@ logger = setup_logger()
 def read_csv_and_send_sms(csv_file_path, sms_sender):
     """
     Read CSV file and send SMS to phone numbers
-
+    
     Args:
         csv_file_path (str): Path to CSV file
         sms_sender (SMSSender): SMS sender instance
-
+        
     Returns:
         tuple: (successful_count, failed_count)
     """
