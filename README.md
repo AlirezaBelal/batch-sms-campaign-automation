@@ -1,91 +1,103 @@
-# Automated SMS Messaging System
+# Batch Messaging Delivery System
 
-This project is an automated SMS messaging system that sends personalized messages to a list of contacts from a CSV file
-using the [SMS-Gate](https://api.sms-gate.app) API service.
+## Overview
 
-## Features
+This system sends structured SMS messages to a list of users using external API integration.
 
-- Sends personalized SMS messages to a list of contacts
-- Automatically converts phone numbers to international format
-- Advanced logging system for tracking the sending process
-- Detailed reporting on successful and failed messages
-- Robust error handling with helpful error messages
+It focuses on:
 
-## Prerequisites
+* Batch message processing
+* Phone number normalization
+* Reliable delivery tracking
+* Structured logging and reporting
 
-- Python 3.6 or higher
-- Required Python packages listed in `requirements.txt`
+---
 
-## Installation and Setup
+## Core Features
 
-1. Clone the project:
-   ```bash
-   git clone https://github.com/yourusername/sms-project.git
-   cd sms-project
-   ```
+### 1. Message Delivery Engine
 
-2. Create a virtual environment (recommended):
-   ```bash
+* Sends personalized SMS messages
+* Uses external SMS API
+* Supports batch processing
+
+### 2. Data Processing Layer
+
+* Reads contacts from CSV files
+* Normalizes phone numbers
+* Prepares message payloads
+
+### 3. Logging System
+
+* Tracks successful sends
+* Records failed deliveries
+* Stores execution logs
+
+---
+
+## Processing Flow
+
+Input CSV → Data Parsing → Normalization → Message Generation → API Delivery → Logging
+
+---
+
+## Project Structure
+
+* main.py → entry point
+* sms_service → delivery engine
+* utils → helper functions
+* config.py → configuration layer
+
+---
+
+## Requirements
+
+* Python 3.6+
+* requests library
+* SMS API credentials
+
+---
+
+## Setup
+
+1. Clone repository
+   git clone [https://github.com/yourusername/sms-project.git](https://github.com/yourusername/sms-project.git)
+
+2. Create virtual environment
    python -m venv venv
-   # On Windows
-   venv\Scripts\activate
-   # On Linux/Mac
+
+3. Activate environment
    source venv/bin/activate
-   ```
 
-3. Install dependencies:
-   ```bash
+4. Install dependencies
    pip install -r requirements.txt
-   ```
 
-4. Prepare your data:
-    - Place your CSV file in the `data` folder
-    - Make sure your CSV file contains `first_name_per` and `selected_phone` columns
+5. Configure system
+   Edit config.py for API settings and file paths
 
-5. Configuration:
-    - Open `config.py` and review the API settings and CSV file path
-    - Modify settings as needed for your environment
+---
 
 ## Usage
 
-To run the program, enter the following command:
-
-```bash
 python main.py
-```
 
-Logs will be stored in the `logs` folder and also displayed in the console output.
+---
 
-## CSV File Format
+## Input Format
 
-The CSV file must include at least two columns:
+Required CSV columns:
 
-- `first_name_per`: Contact name used in the message
-- `selected_phone`: Contact phone number
+* first_name_per
+* selected_phone
 
-Example:
+---
 
-```
-first_name_per,selected_phone
-Ali,09123456789
-Mohammad,09198765432
-```
+## System Value
 
-## Troubleshooting
+This project demonstrates:
 
-If you encounter issues:
+* API integration architecture
+* Batch processing pipeline
+* Messaging delivery system design
+* Logging and reliability handling
 
-1. Check the log files in the `logs` folder
-2. Verify that your API credentials are correct
-3. Check your CSV file format
-4. Verify your internet connection
-
-## Development and Improvements
-
-Consider these ideas for further development:
-
-- Add a web or graphical user interface
-- Support for more file formats (such as Excel)
-- Create various message templates
-- Add scheduled message sending functionality
-- Implement advanced reporting system
