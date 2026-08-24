@@ -1,25 +1,22 @@
-"""
-Logging utility for the SMS sending application
-"""
+"""Application logging configuration."""
+
 import logging
-import os
+from pathlib import Path
+
+from config import LOG_FILE, LOG_FORMAT, LOG_LEVEL
 
 
-def setup_logger():
-    """Set up and return a configured logger"""
-    from config import LOG_LEVEL, LOG_FORMAT, LOG_FILE
+def configure_logging() -> None:
+    """Configure console and file logging for the campaign application."""
+    log_path = Path(LOG_FILE)
+    if log_path.parent != Path("."):
+        log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Create logs directory if it doesn't exist
-    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
-
-    # Configure logger
     logging.basicConfig(
-        level=getattr(logging, LOG_LEVEL),
+        level=getattr(logging, LOG_LEVEL.upper(), logging.INFO),
         format=LOG_FORMAT,
         handlers=[
-            logging.FileHandler(LOG_FILE),
-            logging.StreamHandler()
-        ]
+            logging.FileHandler(log_path, encoding="utf-8"),
+            logging.StreamHandler(),
+        ],
     )
-
-    return logging.getLogger(__name__)
