@@ -15,7 +15,7 @@ from config import (
     REQUEST_TIMEOUT_SECONDS,
     SEND_ENABLED,
 )
-from sms_service.sms_sender import SMSGatewayClient
+from sms_service import SMSGatewayClient
 from utils.logger import configure_logging
 
 logger = logging.getLogger(__name__)
