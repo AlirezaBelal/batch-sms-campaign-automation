@@ -5,6 +5,7 @@ import logging
 from campaign import CampaignRunner
 from config import (
     CAMPAIGN_INPUT_FILE,
+    DRY_RUN_ENABLED,
     GATEWAY_MESSAGE_ENDPOINT,
     GATEWAY_PASSWORD,
     GATEWAY_USERNAME,
@@ -22,7 +23,15 @@ logger = logging.getLogger(__name__)
 
 
 def validate_runtime_config() -> bool:
-    """Validate safety-critical configuration before any outbound request."""
+    """Validate safety-critical configuration before campaign execution."""
+    if DRY_RUN_ENABLED:
+        if SEND_ENABLED:
+            logger.warning(
+                "SMS_DRY_RUN=true takes precedence over SMS_SEND_ENABLED=true; "
+                "no gateway requests will be sent."
+            )
+        return True
+
     missing_variables = []
 
     if not GATEWAY_USERNAME:
@@ -39,8 +48,9 @@ def validate_runtime_config() -> bool:
 
     if not SEND_ENABLED:
         logger.warning(
-            "Outbound sending is disabled. Set SMS_SEND_ENABLED=true only after "
-            "reviewing credentials, campaign data, message content and request pacing."
+            "Outbound sending is disabled. Use SMS_DRY_RUN=true for a safe full "
+            "campaign simulation, or set SMS_SEND_ENABLED=true only after reviewing "
+            "credentials, campaign data, message content and request pacing."
         )
         return False
 
@@ -69,9 +79,19 @@ def main() -> None:
         recipient_name_column=RECIPIENT_NAME_COLUMN,
         recipient_phone_column=RECIPIENT_PHONE_COLUMN,
         request_delay_seconds=REQUEST_DELAY_SECONDS,
+        dry_run=DRY_RUN_ENABLED,
     )
 
     result = campaign.run()
+
+    if DRY_RUN_ENABLED:
+        logger.info(
+            "Dry run completed. Total processed: %s, Simulated: %s, Failed validation: %s",
+            result.total_processed,
+            result.simulated,
+            result.failed,
+        )
+        return
 
     logger.info(
         "Campaign run completed. Total processed: %s, API accepted/queued: %s, Failed: %s",
