@@ -17,6 +17,8 @@ This repository is a **sanitized portfolio snapshot** of a personal automation w
 - Privacy-safe logging with masked phone numbers
 - Environment-based secret management
 - Explicit opt-in before outbound sending
+- Containerized execution with Docker
+- Small unit-test coverage for normalization/privacy helpers
 
 ## Processing flow
 
@@ -43,11 +45,15 @@ Masked structured logs
 ├── main.py                     # Batch orchestration and runtime safeguards
 ├── config.py                   # Environment-based configuration
 ├── requirements.txt
+├── Dockerfile
+├── .dockerignore
 ├── sms_service/
 │   └── sms_sender.py           # Provider API client and message rendering
-└── utils/
-    ├── logger.py               # File + console logging
-    └── phone_formatter.py      # Iranian mobile normalization and masking
+├── utils/
+│   ├── logger.py               # File + console logging
+│   └── phone_formatter.py      # Iranian mobile normalization and masking
+└── tests/
+    └── test_phone_formatter.py # Normalization and masking tests
 ```
 
 ## Requirements
@@ -106,7 +112,7 @@ Column names can be changed with `SMS_FIRST_NAME_COLUMN` and `SMS_PHONE_COLUMN`.
 
 The current phone formatter is intentionally scoped to **Iranian mobile numbers** and normalizes supported inputs to `+98...` format.
 
-## Run
+## Run locally
 
 ```bash
 python main.py
@@ -114,11 +120,41 @@ python main.py
 
 If credentials are missing or `SMS_SEND_ENABLED` is not enabled, the program exits before making outbound requests.
 
+## Run with Docker
+
+Build the image:
+
+```bash
+docker build -t batch-messaging-delivery-system .
+```
+
+Run with your local environment and data mounted at runtime:
+
+```bash
+docker run --rm \
+  --env-file .env \
+  -v "$PWD/data:/app/data:ro" \
+  -v "$PWD/logs:/app/logs" \
+  batch-messaging-delivery-system
+```
+
+Recipient data and credentials are intentionally not copied into the image.
+
+## Tests
+
+The repository uses Python's built-in `unittest`, so there is no additional test dependency:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+The current tests cover common Iranian mobile-number formats, invalid input rejection, and phone-number masking used in logs.
+
 ## Logging and privacy
 
 The workflow logs processing outcomes to both the console and a log file. Phone numbers are masked before being written to logs so that routine execution output does not expose full recipient numbers.
 
-Generated logs, local `.env` files, CSV data, and local databases are excluded through `.gitignore`.
+Generated logs, local `.env` files, CSV data, and local databases are excluded through `.gitignore` and `.dockerignore`.
 
 ## Status semantics
 
