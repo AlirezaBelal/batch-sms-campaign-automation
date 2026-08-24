@@ -1,5 +1,7 @@
 # Batch SMS Campaign Automation
 
+[![CI](https://github.com/AlirezaBelal/batch-sms-campaign-automation/actions/workflows/ci.yml/badge.svg)](https://github.com/AlirezaBelal/batch-sms-campaign-automation/actions/workflows/ci.yml)
+
 > A product-oriented Python workflow for running controlled, personalized batch SMS campaigns through an external gateway.
 
 This project was built around a practical operational problem:
