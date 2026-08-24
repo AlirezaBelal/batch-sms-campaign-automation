@@ -22,6 +22,7 @@ GATEWAY_MESSAGE_ENDPOINT = os.getenv(
 )
 
 # Campaign safety and input
+DRY_RUN_ENABLED = os.getenv("SMS_DRY_RUN", "false").strip().lower() in _TRUE_VALUES
 SEND_ENABLED = os.getenv("SMS_SEND_ENABLED", "false").strip().lower() in _TRUE_VALUES
 CAMPAIGN_INPUT_FILE = os.getenv("SMS_CSV_FILE_PATH", "data/contacts.csv")
 RECIPIENT_NAME_COLUMN = os.getenv("SMS_FIRST_NAME_COLUMN", "first_name_per")
