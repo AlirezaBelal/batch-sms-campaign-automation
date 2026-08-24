@@ -1,11 +1,12 @@
-"""Phone-number normalization and privacy helpers."""
+"""Iranian mobile-number normalization and privacy helpers."""
 
 
-def convert_to_international_format(phone_number):
-    """Normalize an Iranian mobile number to E.164-like ``+98...`` format.
+def normalize_iranian_mobile(phone_number: object) -> str:
+    """Normalize a supported Iranian mobile number to ``+98...`` format.
 
-    Accepted examples include ``0912...``, ``912...``, ``98912...`` and
-    ``0098912...``. Invalid or non-mobile values raise ``ValueError``.
+    Accepted inputs include national and international representations such as
+    ``0912...``, ``912...``, ``98912...`` and ``0098912...``. Invalid or
+    non-mobile values raise ``ValueError`` instead of being silently altered.
     """
     digits = "".join(filter(str.isdigit, str(phone_number)))
 
@@ -25,8 +26,8 @@ def convert_to_international_format(phone_number):
     return f"+98{national_number}"
 
 
-def mask_phone_number(phone_number):
-    """Return a privacy-safe representation for logs."""
+def mask_phone_number(phone_number: object) -> str:
+    """Return a privacy-safe phone representation for operational logs."""
     digits = "".join(filter(str.isdigit, str(phone_number)))
     if len(digits) < 4:
         return "***"
