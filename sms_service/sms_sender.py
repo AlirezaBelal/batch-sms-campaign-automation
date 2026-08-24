@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class SMSGatewayClient:
-    """Submit SMS requests to the configured provider gateway."""
+    """Validate recipients, render messages and submit requests to an SMS gateway."""
 
     def __init__(
         self,
@@ -28,6 +28,10 @@ class SMSGatewayClient:
         self.timeout_seconds = timeout_seconds
         self.session = requests.Session()
 
+    def validate_recipient(self, phone_number: str) -> str:
+        """Normalize and validate one Iranian mobile number."""
+        return normalize_iranian_mobile(phone_number)
+
     def submit_message(self, phone_number: str, message: str) -> Tuple[bool, object]:
         """Submit one message and report whether the provider accepted the request.
 
@@ -37,7 +41,7 @@ class SMSGatewayClient:
         masked_phone = mask_phone_number(phone_number)
 
         try:
-            normalized_phone = normalize_iranian_mobile(phone_number)
+            normalized_phone = self.validate_recipient(phone_number)
             masked_phone = mask_phone_number(normalized_phone)
 
             response = self.session.post(
