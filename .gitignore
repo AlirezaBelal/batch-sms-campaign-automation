@@ -24,9 +24,10 @@ logs/
 *.sqlite
 *.db
 
-# Environmental variables
+# Environment variables and secrets
 .env
 .env.*
+!.env.example
 
 # Local configuration
 config.local.py
