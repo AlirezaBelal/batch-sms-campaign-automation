@@ -1,144 +1,89 @@
-"""Application entry point for the batch messaging workflow."""
-import csv
-import os
-import time
+"""Command-line entry point for Batch SMS Campaign Automation."""
 
+import logging
+
+from campaign import CampaignRunner
 from config import (
-    SERVER_ADDRESS,
-    USERNAME,
-    PASSWORD,
-    API_ENDPOINT,
-    SEND_ENABLED,
-    CSV_FILE_PATH,
-    FIRST_NAME_COLUMN,
-    PHONE_COLUMN,
+    CAMPAIGN_INPUT_FILE,
+    GATEWAY_MESSAGE_ENDPOINT,
+    GATEWAY_PASSWORD,
+    GATEWAY_USERNAME,
     MESSAGE_TEMPLATE,
-    DELAY_BETWEEN_SMS,
-    REQUEST_TIMEOUT,
+    RECIPIENT_NAME_COLUMN,
+    RECIPIENT_PHONE_COLUMN,
+    REQUEST_DELAY_SECONDS,
+    REQUEST_TIMEOUT_SECONDS,
+    SEND_ENABLED,
 )
-from sms_service.sms_sender import SMSSender
-from utils.logger import setup_logger
+from sms_service.sms_sender import SMSGatewayClient
+from utils.logger import configure_logging
 
-logger = setup_logger()
-
-
-def read_csv_and_submit_messages(csv_file_path, sms_sender):
-    """Read contacts from CSV and submit messages to the provider API.
-
-    Returns:
-        tuple[int, int]: ``(accepted_or_queued, failed)`` counts.
-    """
-    accepted = 0
-    failed = 0
-
-    if not os.path.exists(csv_file_path):
-        logger.error("CSV file not found: %s", csv_file_path)
-        return accepted, failed
-
-    try:
-        with open(csv_file_path, "r", encoding="utf-8", newline="") as file:
-            reader = csv.reader(file)
-            header = next(reader, None)
-
-            if not header:
-                logger.error("CSV file is empty: %s", csv_file_path)
-                return accepted, failed
-
-            try:
-                first_name_index = header.index(FIRST_NAME_COLUMN)
-                phone_index = header.index(PHONE_COLUMN)
-            except ValueError as exc:
-                logger.error("Required CSV column not found: %s", exc)
-                return accepted, failed
-
-            for row_num, row in enumerate(reader, start=2):
-                try:
-                    if len(row) <= max(first_name_index, phone_index):
-                        logger.warning("Row %s has insufficient columns; skipping", row_num)
-                        failed += 1
-                        continue
-
-                    name = row[first_name_index].strip()
-                    phone = row[phone_index].strip()
-
-                    if not phone:
-                        logger.warning("Row %s has an empty phone number; skipping", row_num)
-                        failed += 1
-                        continue
-
-                    message = sms_sender.create_message(name)
-                    accepted_by_api, _ = sms_sender.send_sms(phone, message)
-
-                    if accepted_by_api:
-                        accepted += 1
-                    else:
-                        failed += 1
-
-                    if DELAY_BETWEEN_SMS > 0:
-                        time.sleep(DELAY_BETWEEN_SMS)
-
-                except Exception as exc:
-                    logger.error("Error processing row %s: %s", row_num, exc)
-                    failed += 1
-
-    except OSError as exc:
-        logger.error("Error reading CSV file: %s", exc)
-
-    return accepted, failed
+logger = logging.getLogger(__name__)
 
 
-def validate_runtime_config():
-    """Check required runtime configuration before any outbound request."""
-    missing = []
-    if not USERNAME:
-        missing.append("SMS_USERNAME")
-    if not PASSWORD:
-        missing.append("SMS_PASSWORD")
+def validate_runtime_config() -> bool:
+    """Validate safety-critical configuration before any outbound request."""
+    missing_variables = []
 
-    if missing:
-        logger.error("Missing required environment variables: %s", ", ".join(missing))
+    if not GATEWAY_USERNAME:
+        missing_variables.append("SMS_USERNAME")
+    if not GATEWAY_PASSWORD:
+        missing_variables.append("SMS_PASSWORD")
+
+    if missing_variables:
+        logger.error(
+            "Missing required environment variables: %s",
+            ", ".join(missing_variables),
+        )
         return False
 
     if not SEND_ENABLED:
         logger.warning(
-            "Sending is disabled. Set SMS_SEND_ENABLED=true only after reviewing "
-            "credentials, input data and message content."
+            "Outbound sending is disabled. Set SMS_SEND_ENABLED=true only after "
+            "reviewing credentials, campaign data, message content and request pacing."
         )
         return False
 
     return True
 
 
-def main():
-    logger.info("Starting batch messaging process")
+def main() -> None:
+    """Initialize application components and execute one campaign run."""
+    configure_logging()
+    logger.info("Starting SMS campaign automation")
 
     if not validate_runtime_config():
         return
 
-    sms_sender = SMSSender(
-        SERVER_ADDRESS,
-        USERNAME,
-        PASSWORD,
-        API_ENDPOINT,
-        MESSAGE_TEMPLATE,
-        timeout=REQUEST_TIMEOUT,
+    gateway_client = SMSGatewayClient(
+        endpoint=GATEWAY_MESSAGE_ENDPOINT,
+        username=GATEWAY_USERNAME,
+        password=GATEWAY_PASSWORD,
+        message_template=MESSAGE_TEMPLATE,
+        timeout_seconds=REQUEST_TIMEOUT_SECONDS,
     )
 
-    accepted, failed = read_csv_and_submit_messages(CSV_FILE_PATH, sms_sender)
-    total = accepted + failed
+    campaign = CampaignRunner(
+        gateway=gateway_client,
+        input_file=CAMPAIGN_INPUT_FILE,
+        recipient_name_column=RECIPIENT_NAME_COLUMN,
+        recipient_phone_column=RECIPIENT_PHONE_COLUMN,
+        request_delay_seconds=REQUEST_DELAY_SECONDS,
+    )
+
+    result = campaign.run()
 
     logger.info(
-        "Process completed. Total processed: %s, API accepted/queued: %s, Failed: %s",
-        total,
-        accepted,
-        failed,
+        "Campaign run completed. Total processed: %s, API accepted/queued: %s, Failed: %s",
+        result.total_processed,
+        result.accepted_or_queued,
+        result.failed,
     )
 
-    if total > 0:
-        acceptance_rate = (accepted / total) * 100
+    if result.total_processed:
         logger.info(
             "API acceptance/queue rate: %.2f%% (not a carrier delivery rate)",
-            acceptance_rate,
+            result.api_acceptance_rate,
         )
 
 
