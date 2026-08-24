@@ -221,6 +221,18 @@ Dry run completed. Total processed: 2, Simulated: 2, Failed validation: 0
 
 The bundled `examples/contacts.example.csv` contains synthetic-looking test data intended only for Dry Run and format demonstration. **Do not use the bundled example recipients for live sending.**
 
+## SMS Gateway for Android setup
+
+The default gateway configuration in this repository is compatible with **SMS Gateway for Android**. For live sending, install and configure the Android application using the provider's official installation guide:
+
+**[SMS Gateway for Android — Installation Guide](https://docs.sms-gate.app/installation/)**
+
+Use the official installation page rather than a version-specific APK link so the setup instructions continue to point to the provider's current release.
+
+After installing the Android gateway, configure the credentials and endpoint issued by your selected gateway mode in your local `.env` file. Provider credentials belong only in local/environment configuration and must never be committed to the repository.
+
+The application keeps the gateway endpoint configurable through `SMS_SERVER_ADDRESS` and `SMS_API_ENDPOINT`, so the campaign layer is not tied to a hard-coded deployment URL.
+
 ## Live campaign execution
 
 Use live mode only after reviewing the campaign and configuring valid provider credentials.
