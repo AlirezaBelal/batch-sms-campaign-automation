@@ -1,42 +1,43 @@
-"""Configuration for the batch messaging application.
+"""Runtime configuration for Batch SMS Campaign Automation.
 
-Secrets and environment-specific values are loaded from environment variables.
-Never commit live credentials to this file.
+Environment variables are the public configuration interface. Internal names
+use product/domain terminology so application code remains easy to read.
 """
+
 import os
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# SMS service configuration
-SERVER_ADDRESS = os.getenv("SMS_SERVER_ADDRESS", "https://api.sms-gate.app").rstrip("/")
-USERNAME = os.getenv("SMS_USERNAME", "")
-PASSWORD = os.getenv("SMS_PASSWORD", "")
-API_ENDPOINT = os.getenv(
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+
+# Provider gateway
+GATEWAY_BASE_URL = os.getenv("SMS_SERVER_ADDRESS", "https://api.sms-gate.app").rstrip("/")
+GATEWAY_USERNAME = os.getenv("SMS_USERNAME", "")
+GATEWAY_PASSWORD = os.getenv("SMS_PASSWORD", "")
+GATEWAY_MESSAGE_ENDPOINT = os.getenv(
     "SMS_API_ENDPOINT",
-    f"{SERVER_ADDRESS}/3rdparty/v1/message",
+    f"{GATEWAY_BASE_URL}/3rdparty/v1/message",
 )
 
-# Sending is opt-in to reduce accidental sends while testing/configuring.
-SEND_ENABLED = os.getenv("SMS_SEND_ENABLED", "false").lower() in {"1", "true", "yes"}
+# Campaign safety and input
+SEND_ENABLED = os.getenv("SMS_SEND_ENABLED", "false").strip().lower() in _TRUE_VALUES
+CAMPAIGN_INPUT_FILE = os.getenv("SMS_CSV_FILE_PATH", "data/contacts.csv")
+RECIPIENT_NAME_COLUMN = os.getenv("SMS_FIRST_NAME_COLUMN", "first_name_per")
+RECIPIENT_PHONE_COLUMN = os.getenv("SMS_PHONE_COLUMN", "selected_phone")
 
-# CSV configuration
-CSV_FILE_PATH = os.getenv("SMS_CSV_FILE_PATH", "data/contacts.csv")
-FIRST_NAME_COLUMN = os.getenv("SMS_FIRST_NAME_COLUMN", "first_name_per")
-PHONE_COLUMN = os.getenv("SMS_PHONE_COLUMN", "selected_phone")
-
-# Message template. Keep the public default generic; customize locally as needed.
+# Message content
 MESSAGE_TEMPLATE = os.getenv(
     "SMS_MESSAGE_TEMPLATE",
     "Hello {name}, this is a sample message.",
 )
 
-# Logging configuration
+# Operational logging
 LOG_LEVEL = os.getenv("SMS_LOG_LEVEL", "INFO")
-LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
-LOG_FILE = os.getenv("SMS_LOG_FILE", "logs/sms_sender.log")
+LOG_FORMAT = "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+LOG_FILE = os.getenv("SMS_LOG_FILE", "logs/sms_campaign.log")
 
-# Request configuration
-REQUEST_TIMEOUT = int(os.getenv("SMS_REQUEST_TIMEOUT", "10"))
-DELAY_BETWEEN_SMS = float(os.getenv("SMS_DELAY_BETWEEN_SMS", "2"))
+# Gateway request behavior
+REQUEST_TIMEOUT_SECONDS = int(os.getenv("SMS_REQUEST_TIMEOUT", "10"))
+REQUEST_DELAY_SECONDS = float(os.getenv("SMS_DELAY_BETWEEN_SMS", "2"))
