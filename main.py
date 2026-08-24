@@ -1,14 +1,20 @@
-"""
-Main application entry point for the SMS sending application
-"""
+"""Application entry point for the batch messaging workflow."""
 import csv
 import os
 import time
 
 from config import (
-    SERVER_ADDRESS, USERNAME, PASSWORD, API_ENDPOINT,
-    CSV_FILE_PATH, FIRST_NAME_COLUMN, PHONE_COLUMN,
-    DELAY_BETWEEN_SMS, REQUEST_TIMEOUT
+    SERVER_ADDRESS,
+    USERNAME,
+    PASSWORD,
+    API_ENDPOINT,
+    SEND_ENABLED,
+    CSV_FILE_PATH,
+    FIRST_NAME_COLUMN,
+    PHONE_COLUMN,
+    MESSAGE_TEMPLATE,
+    DELAY_BETWEEN_SMS,
+    REQUEST_TIMEOUT,
 )
 from sms_service.sms_sender import SMSSender
 from utils.logger import setup_logger
@@ -16,103 +22,124 @@ from utils.logger import setup_logger
 logger = setup_logger()
 
 
-def read_csv_and_send_sms(csv_file_path, sms_sender):
-    """
-    Read CSV file and send SMS to phone numbers
-    
-    Args:
-        csv_file_path (str): Path to CSV file
-        sms_sender (SMSSender): SMS sender instance
-        
+def read_csv_and_submit_messages(csv_file_path, sms_sender):
+    """Read contacts from CSV and submit messages to the provider API.
+
     Returns:
-        tuple: (successful_count, failed_count)
+        tuple[int, int]: ``(accepted_or_queued, failed)`` counts.
     """
-    successful = 0
+    accepted = 0
     failed = 0
 
+    if not os.path.exists(csv_file_path):
+        logger.error("CSV file not found: %s", csv_file_path)
+        return accepted, failed
+
     try:
-        # Make sure the CSV file exists
-        if not os.path.exists(csv_file_path):
-            logger.error(f"CSV file not found: {csv_file_path}")
-            return successful, failed
-
-        with open(csv_file_path, 'r', encoding='utf-8') as file:
+        with open(csv_file_path, "r", encoding="utf-8", newline="") as file:
             reader = csv.reader(file)
-            header = next(reader)
+            header = next(reader, None)
 
-            # Validate required columns
+            if not header:
+                logger.error("CSV file is empty: %s", csv_file_path)
+                return accepted, failed
+
             try:
                 first_name_index = header.index(FIRST_NAME_COLUMN)
                 phone_index = header.index(PHONE_COLUMN)
-            except ValueError as e:
-                logger.error(f"Required column not found: {str(e)}")
-                return successful, failed
+            except ValueError as exc:
+                logger.error("Required CSV column not found: %s", exc)
+                return accepted, failed
 
-            # Process each row
-            for row_num, row in enumerate(reader, start=2):  # Start from 2 to account for header
+            for row_num, row in enumerate(reader, start=2):
                 try:
                     if len(row) <= max(first_name_index, phone_index):
-                        logger.warning(f"Row {row_num} has insufficient columns. Skipping.")
+                        logger.warning("Row %s has insufficient columns; skipping", row_num)
                         failed += 1
                         continue
 
-                    name = row[first_name_index]
-                    phone = row[phone_index]
+                    name = row[first_name_index].strip()
+                    phone = row[phone_index].strip()
 
-                    # Skip if phone number is empty
                     if not phone:
-                        logger.warning(f"Row {row_num} has empty phone number. Skipping.")
+                        logger.warning("Row %s has an empty phone number; skipping", row_num)
                         failed += 1
                         continue
 
-                    # Create personalized message
                     message = sms_sender.create_message(name)
+                    accepted_by_api, _ = sms_sender.send_sms(phone, message)
 
-                    # Send SMS
-                    success, response = sms_sender.send_sms(phone, message)
-
-                    if success:
-                        successful += 1
+                    if accepted_by_api:
+                        accepted += 1
                     else:
                         failed += 1
 
-                    # Delay between sending SMS to avoid rate limiting
-                    time.sleep(DELAY_BETWEEN_SMS)
+                    if DELAY_BETWEEN_SMS > 0:
+                        time.sleep(DELAY_BETWEEN_SMS)
 
-                except Exception as e:
-                    logger.error(f"Error processing row {row_num}: {str(e)}")
+                except Exception as exc:
+                    logger.error("Error processing row %s: %s", row_num, exc)
                     failed += 1
 
-    except Exception as e:
-        logger.error(f"Error reading CSV file: {str(e)}")
+    except OSError as exc:
+        logger.error("Error reading CSV file: %s", exc)
 
-    return successful, failed
+    return accepted, failed
+
+
+def validate_runtime_config():
+    """Check required runtime configuration before any outbound request."""
+    missing = []
+    if not USERNAME:
+        missing.append("SMS_USERNAME")
+    if not PASSWORD:
+        missing.append("SMS_PASSWORD")
+
+    if missing:
+        logger.error("Missing required environment variables: %s", ", ".join(missing))
+        return False
+
+    if not SEND_ENABLED:
+        logger.warning(
+            "Sending is disabled. Set SMS_SEND_ENABLED=true only after reviewing "
+            "credentials, input data and message content."
+        )
+        return False
+
+    return True
 
 
 def main():
-    """Main function"""
-    logger.info("Starting SMS sending process")
+    logger.info("Starting batch messaging process")
 
-    # Create SMS sender
+    if not validate_runtime_config():
+        return
+
     sms_sender = SMSSender(
         SERVER_ADDRESS,
         USERNAME,
         PASSWORD,
         API_ENDPOINT,
-        timeout=REQUEST_TIMEOUT
+        MESSAGE_TEMPLATE,
+        timeout=REQUEST_TIMEOUT,
     )
 
-    # Send SMS
-    successful, failed = read_csv_and_send_sms(CSV_FILE_PATH, sms_sender)
+    accepted, failed = read_csv_and_submit_messages(CSV_FILE_PATH, sms_sender)
+    total = accepted + failed
 
-    # Log results
-    total = successful + failed
-    logger.info(f"Process completed. Total: {total}, Successful: {successful}, Failed: {failed}")
+    logger.info(
+        "Process completed. Total processed: %s, API accepted/queued: %s, Failed: %s",
+        total,
+        accepted,
+        failed,
+    )
 
-    # Calculate success rate
     if total > 0:
-        success_rate = (successful / total) * 100
-        logger.info(f"Success rate: {success_rate:.2f}%")
+        acceptance_rate = (accepted / total) * 100
+        logger.info(
+            "API acceptance/queue rate: %.2f%% (not a carrier delivery rate)",
+            acceptance_rate,
+        )
 
 
 if __name__ == "__main__":
