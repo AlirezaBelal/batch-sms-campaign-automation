@@ -16,30 +16,35 @@ class MessageGateway(Protocol):
     def render_message(self, recipient_name: str) -> str:
         ...
 
+    def validate_recipient(self, phone_number: str) -> str:
+        ...
+
     def submit_message(self, phone_number: str, message: str) -> Tuple[bool, object]:
         ...
 
 
 @dataclass
 class CampaignResult:
-    """Aggregate submission outcome for one campaign run."""
+    """Aggregate outcome for one campaign run."""
 
     accepted_or_queued: int = 0
+    simulated: int = 0
     failed: int = 0
 
     @property
     def total_processed(self) -> int:
-        return self.accepted_or_queued + self.failed
+        return self.accepted_or_queued + self.simulated + self.failed
 
     @property
     def api_acceptance_rate(self) -> float:
-        if self.total_processed == 0:
+        attempted = self.accepted_or_queued + self.failed
+        if attempted == 0:
             return 0.0
-        return (self.accepted_or_queued / self.total_processed) * 100
+        return (self.accepted_or_queued / attempted) * 100
 
 
 class CampaignRunner:
-    """Process a contact CSV and submit personalized messages through a gateway."""
+    """Process a contact CSV and execute live or simulated message submissions."""
 
     def __init__(
         self,
@@ -48,15 +53,17 @@ class CampaignRunner:
         recipient_name_column: str,
         recipient_phone_column: str,
         request_delay_seconds: float = 0,
+        dry_run: bool = False,
     ) -> None:
         self.gateway = gateway
         self.input_file = Path(input_file)
         self.recipient_name_column = recipient_name_column
         self.recipient_phone_column = recipient_phone_column
         self.request_delay_seconds = max(0.0, request_delay_seconds)
+        self.dry_run = dry_run
 
     def run(self) -> CampaignResult:
-        """Execute one campaign run and return API submission counts."""
+        """Execute one campaign run and return aggregate processing counts."""
         result = CampaignResult()
 
         if not self.input_file.exists():
@@ -100,6 +107,16 @@ class CampaignRunner:
                 return
 
             message = self.gateway.render_message(recipient_name)
+
+            if self.dry_run:
+                self.gateway.validate_recipient(phone_number)
+                result.simulated += 1
+                logger.info(
+                    "DRY RUN: row %s validated; no gateway request was sent",
+                    row_number,
+                )
+                return
+
             accepted_by_api, _ = self.gateway.submit_message(phone_number, message)
 
             if accepted_by_api:
