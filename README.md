@@ -1,191 +1,176 @@
-# Batch Messaging Delivery System
+# Batch SMS Campaign Automation
 
-> A lightweight batch-messaging workflow designed to turn a contact list into a controlled, personalized outbound messaging operation.
+> A product-oriented Python workflow for running controlled, personalized batch SMS campaigns through an external gateway.
 
 This project was built around a practical operational problem:
 
-**How can a personalized campaign be sent to thousands of contacts without manually preparing messages one by one, while keeping execution controlled, observable, and reasonably safe?**
+**How can a personalized SMS campaign be executed for thousands of contacts without preparing messages one by one, while keeping the workflow controlled, observable, repeatable, and safe to operate?**
 
-The workflow processes structured contact data, normalizes phone numbers, renders personalized messages, submits them to an external messaging gateway, and records the result of each submission.
+The application reads structured contact data, validates campaign input, normalizes Iranian mobile numbers, renders personalized messages, submits them to an SMS gateway with configurable pacing, and records submission outcomes in privacy-aware logs.
 
-The original workflow was used in a campaign involving approximately **5,000 contacts**. This public repository is a sanitized implementation snapshot: recipient data, credentials, and campaign-specific content are intentionally excluded.
-
----
+The original workflow was used for a campaign involving approximately **5,000 contacts**. This repository is a sanitized portfolio snapshot: recipient data, live credentials, and campaign-specific content are intentionally excluded.
 
 ## Product context
 
-Sending a few personalized messages manually is simple.
-
-Sending thousands introduces different problems:
+A small number of personalized messages can be handled manually. At campaign scale, the operating problem changes:
 
 - contact data may be inconsistent
-- phone numbers may use different formats
-- messages need personalization
-- gateway requests need pacing
-- individual failures should not stop the whole batch
-- credentials and recipient data must stay outside source control
-- operators need visibility into what was accepted or rejected
-- an API acknowledgement must not be confused with final carrier delivery
+- phone numbers may use different representations
+- messages need per-recipient personalization
+- outbound requests need pacing
+- one bad row should not terminate the batch
+- credentials and contact data must stay outside source control
+- operators need a clear execution summary
+- gateway acknowledgement must not be confused with final carrier delivery
 
-This project packages those concerns into one repeatable workflow.
-
-### Product goal
-
-Reduce the operational effort of a large personalized messaging campaign while maintaining:
+The product goal is to reduce repetitive campaign operations while preserving:
 
 **control · repeatability · observability · data hygiene**
 
----
-
-## What the system does
+## What the application does
 
 ```text
 Contact CSV
     ↓
-Validate input structure
+Schema validation
     ↓
-Read recipient + phone number
+Campaign orchestration
     ↓
-Normalize phone number
+Recipient extraction
     ↓
-Render personalized message
+Mobile-number normalization
     ↓
-Submit to messaging API
+Message rendering
     ↓
-Apply request pacing
+Rate-controlled gateway submission
     ↓
-Record accepted / queued / failed result
+Accepted / queued / failed result
     ↓
-Write privacy-aware logs
+Privacy-aware logs + campaign summary
 ```
 
 ### Core capabilities
 
+**Campaign orchestration**  
+Separates campaign execution from the command-line entry point through a dedicated `CampaignRunner`.
+
 **Batch processing**  
-Processes contacts sequentially from a structured CSV file.
+Processes recipient records from a structured CSV file while isolating row-level failures.
 
 **Personalization**  
 Renders a configurable message template for each recipient.
 
-**Phone normalization**  
-Normalizes supported Iranian mobile-number formats before submission.
+**Iranian mobile normalization**  
+Normalizes supported local and international representations into a consistent `+98...` format and rejects malformed/non-mobile values.
 
 **Gateway integration**  
-Submits messages through a REST API with authenticated requests.
+Uses an authenticated REST client dedicated to SMS-provider submission.
 
-**Rate control**  
-Adds a configurable delay between requests to reduce uncontrolled bursts.
-
-**Failure isolation**  
-A malformed row or failed request does not terminate the entire campaign.
+**Request pacing**  
+Adds a configurable delay between submissions to avoid uncontrolled request bursts.
 
 **Operational logging**  
-Records processing outcomes while masking phone numbers in routine logs.
+Records campaign outcomes while masking phone numbers in routine logs.
 
 **Safe-by-default sending**  
-Outbound submission is disabled unless it is explicitly enabled through configuration.
-
----
+Outbound submission remains disabled until `SMS_SEND_ENABLED=true` is explicitly configured.
 
 ## Product boundaries
 
-This repository implements the **submission workflow**, not a complete messaging platform.
+This repository implements a **campaign submission workflow**, not a complete messaging platform.
 
-A successful API response means that the provider has accepted or queued the request.
+A successful API response means the configured provider accepted or queued the request.
 
-> `Pending` means **queued by the provider** — it does not prove that the message reached the recipient.
+> A state such as `Pending` is a provider queue acknowledgement. It is **not** a carrier delivery receipt and does not prove that the recipient received the SMS.
 
-Therefore metrics produced by this project describe:
+The application therefore reports:
 
-- processed contacts
+- contacts processed
 - API accepted / queued requests
 - failed submissions
+- API acceptance / queue rate
 
-They should **not** be interpreted as:
+It does **not** claim:
 
 - carrier-confirmed delivery
-- recipient receipt
-- read status
-- final campaign delivery rate
-
----
+- recipient receipt or read status
+- final SMS delivery rate
 
 ## Architecture
 
 ```text
-                   ┌─────────────────┐
-                   │   Contact CSV   │
-                   └────────┬────────┘
-                            │
-                            ▼
-                  ┌──────────────────┐
-                  │ Batch Orchestrator│
-                  │     main.py       │
-                  └────────┬─────────┘
+                 ┌────────────────────┐
+                 │    Contact CSV     │
+                 └─────────┬──────────┘
                            │
-              ┌────────────┴────────────┐
-              ▼                         ▼
-     ┌─────────────────┐       ┌─────────────────┐
-     │ Phone Formatter │       │ Message Renderer│
-     └────────┬────────┘       └────────┬────────┘
-              └────────────┬────────────┘
                            ▼
-                  ┌──────────────────┐
-                  │   SMS Sender     │
-                  │  REST API Client │
-                  └────────┬─────────┘
+                 ┌────────────────────┐
+                 │   CampaignRunner   │
+                 │    campaign.py     │
+                 └─────────┬──────────┘
+                           │
+             ┌─────────────┴─────────────┐
+             ▼                           ▼
+   ┌──────────────────┐        ┌──────────────────┐
+   │ Mobile Normalizer│        │ Message Renderer │
+   └─────────┬────────┘        └─────────┬────────┘
+             └─────────────┬─────────────┘
                            ▼
-                  ┌──────────────────┐
-                  │ External Gateway │
-                  └────────┬─────────┘
+                 ┌────────────────────┐
+                 │  SMSGatewayClient  │
+                 │   REST submission  │
+                 └─────────┬──────────┘
                            ▼
-                  ┌──────────────────┐
-                  │ Masked Logs +    │
-                  │ Batch Summary    │
-                  └──────────────────┘
+                 ┌────────────────────┐
+                 │ External SMS       │
+                 │ Gateway            │
+                 └─────────┬──────────┘
+                           ▼
+                 ┌────────────────────┐
+                 │ Masked logs +      │
+                 │ CampaignResult     │
+                 └────────────────────┘
 ```
 
----
+`main.py` acts as the composition root: it configures logging, validates safety-critical settings, wires the gateway client to the campaign runner, executes one campaign run, and prints the aggregate result.
 
 ## Repository structure
 
 ```text
 .
-├── main.py
-├── config.py
+├── main.py                       # Application entry point / component wiring
+├── campaign.py                   # Campaign orchestration and result model
+├── config.py                     # Environment-backed runtime configuration
+├── .env.example                  # Safe configuration template
 ├── requirements.txt
 ├── Dockerfile
 ├── .dockerignore
 ├── sms_service/
-│   └── sms_sender.py
+│   └── sms_sender.py             # SMSGatewayClient / provider integration
 ├── utils/
-│   ├── logger.py
-│   └── phone_formatter.py
+│   ├── logger.py                 # Central logging configuration
+│   └── phone_formatter.py        # Iranian mobile normalization + masking
 └── tests/
-    └── test_phone_formatter.py
+    ├── test_campaign.py          # Campaign orchestration tests
+    └── test_phone_formatter.py   # Normalization and privacy-helper tests
 ```
 
-| Component | Responsibility |
-|---|---|
-| `main.py` | Batch orchestration, CSV validation and execution safeguards |
-| `config.py` | Environment-based runtime configuration |
-| `sms_service/sms_sender.py` | Message rendering and gateway communication |
-| `utils/phone_formatter.py` | Iranian mobile normalization and log masking |
-| `utils/logger.py` | Console and file logging |
-| `tests/` | Tests for normalization and privacy helpers |
+## Requirements
 
----
+- Python 3.8+
+- access to a compatible SMS gateway
+- a CSV file containing recipient names and mobile numbers
 
-# Running the project
+## Run locally
 
-## 1. Clone
+### 1. Clone
 
 ```bash
-git clone https://github.com/AlirezaBelal/batch-messaging-delivery-system.git
-cd batch-messaging-delivery-system
+git clone https://github.com/AlirezaBelal/batch-sms-campaign-automation.git
+cd batch-sms-campaign-automation
 ```
 
-## 2. Create a virtual environment
+### 2. Create a virtual environment
 
 ```bash
 python -m venv .venv
@@ -203,23 +188,48 @@ Windows:
 .venv\Scripts\activate
 ```
 
-## 3. Install dependencies
+### 3. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
----
+### 4. Create local configuration
 
-## 4. Prepare your contact file
+```bash
+cp .env.example .env
+```
 
-By default, the application expects:
+On Windows, copy `.env.example` to `.env` manually or with PowerShell.
+
+Then configure your gateway credentials and campaign settings in `.env`.
+
+```dotenv
+SMS_SERVER_ADDRESS=https://your-provider.example
+SMS_USERNAME=your_username
+SMS_PASSWORD=your_password
+SMS_SEND_ENABLED=false
+
+SMS_CSV_FILE_PATH=data/contacts.csv
+SMS_FIRST_NAME_COLUMN=first_name_per
+SMS_PHONE_COLUMN=selected_phone
+
+SMS_MESSAGE_TEMPLATE=Hello {name}, this is a sample message.
+SMS_REQUEST_TIMEOUT=10
+SMS_DELAY_BETWEEN_SMS=2
+```
+
+The `.env` file is ignored by Git.
+
+### 5. Prepare campaign input
+
+The default input path is:
 
 ```text
 data/contacts.csv
 ```
 
-Example:
+Default schema:
 
 ```csv
 first_name_per,selected_phone
@@ -227,203 +237,140 @@ Ali,09121234567
 Sara,+989121234567
 ```
 
-The default required columns are:
+Column names can be changed using `SMS_FIRST_NAME_COLUMN` and `SMS_PHONE_COLUMN`.
 
-```text
-first_name_per
-selected_phone
-```
+> Real recipient datasets should not be committed to the repository.
 
-Both names can be changed through environment variables.
+### 6. Review the safety gate
 
-> Real contact datasets should never be committed to the repository.
-
----
-
-## 5. Configure the environment
-
-Create a local `.env` file:
-
-```dotenv
-SMS_SERVER_ADDRESS=https://your-provider.example
-
-SMS_USERNAME=your_username
-SMS_PASSWORD=your_password
-
-SMS_CSV_FILE_PATH=data/contacts.csv
-
-SMS_FIRST_NAME_COLUMN=first_name_per
-SMS_PHONE_COLUMN=selected_phone
-
-SMS_MESSAGE_TEMPLATE=Hello {name}, this is a sample message.
-
-SMS_REQUEST_TIMEOUT=10
-SMS_DELAY_BETWEEN_SMS=2
-
-SMS_SEND_ENABLED=false
-```
-
-The `.env` file is ignored by Git.
-
-### Safety switch
-
-The most important setting is:
+Sending is disabled by default:
 
 ```dotenv
 SMS_SEND_ENABLED=false
 ```
 
-Sending is disabled by default.
+Before enabling outbound requests, review:
 
-Only after verifying:
-
-- credentials
-- input CSV
+- provider credentials
+- campaign input
 - recipient list
-- message content
+- message template
 - request delay
 
-change it to:
+Only then set:
 
 ```dotenv
 SMS_SEND_ENABLED=true
 ```
 
----
-
-## 6. Run
+### 7. Run
 
 ```bash
 python main.py
 ```
 
-If required credentials are missing or sending has not explicitly been enabled, the application exits without submitting messages.
+If credentials are missing or outbound sending has not explicitly been enabled, the application exits before submitting any request.
 
----
+## Configuration reference
 
-## Example execution
+| Environment variable | Purpose | Default |
+|---|---|---|
+| `SMS_SERVER_ADDRESS` | SMS provider base URL | provider-specific default in code |
+| `SMS_API_ENDPOINT` | Override message endpoint | derived from base URL |
+| `SMS_USERNAME` | Gateway username | required |
+| `SMS_PASSWORD` | Gateway password | required |
+| `SMS_SEND_ENABLED` | Explicit outbound-send safety switch | `false` |
+| `SMS_CSV_FILE_PATH` | Campaign CSV path | `data/contacts.csv` |
+| `SMS_FIRST_NAME_COLUMN` | Recipient-name column | `first_name_per` |
+| `SMS_PHONE_COLUMN` | Recipient-phone column | `selected_phone` |
+| `SMS_MESSAGE_TEMPLATE` | Message template; supports `{name}` | generic sample |
+| `SMS_REQUEST_TIMEOUT` | Gateway timeout in seconds | `10` |
+| `SMS_DELAY_BETWEEN_SMS` | Delay between submissions | `2` |
+| `SMS_LOG_LEVEL` | Logging level | `INFO` |
+| `SMS_LOG_FILE` | Log output path | `logs/sms_campaign.log` |
 
-```text
-Starting batch messaging process
+## Docker
 
-Processing contacts...
-
-Message queued for ********4567
-Message accepted for ********2233
-Request failed for ********7788
-
-Process completed.
-Total processed: 500
-API accepted/queued: 487
-Failed: 13
-
-API acceptance/queue rate: 97.40%
-```
-
-The percentage above is an **API acceptance rate**, not a carrier delivery rate.
-
----
-
-# Docker
-
-Build:
+Build the image:
 
 ```bash
-docker build -t batch-messaging-delivery-system .
+docker build -t batch-sms-campaign-automation .
 ```
 
-Run:
+Run with local configuration and data mounted at runtime:
 
 ```bash
 docker run --rm \
   --env-file .env \
   -v "$PWD/data:/app/data:ro" \
   -v "$PWD/logs:/app/logs" \
-  batch-messaging-delivery-system
+  batch-sms-campaign-automation
 ```
 
-Recipient files and credentials are supplied at runtime and are not baked into the image.
+Credentials and recipient data are supplied at runtime rather than baked into the image.
 
----
+## Tests
 
-# Tests
-
-Run the current unit tests with:
+The project uses Python's built-in `unittest` framework:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-Current tests focus on:
+Current tests cover:
 
-- Iranian mobile-number normalization
-- invalid input handling
-- privacy-safe phone masking
+- common Iranian mobile-number representations
+- invalid/non-mobile rejection
+- phone-number masking for logs
+- campaign row processing
+- API acceptance aggregation
+- missing-phone handling without gateway submission
 
----
-
-# Operational safeguards
+## Operational safeguards
 
 ### Credentials
 
-Secrets are loaded through environment variables rather than committed configuration.
+Secrets are loaded from environment variables. Live credentials should never be committed.
 
-If a credential has ever appeared in public Git history, deleting it from the latest version is **not enough**. It should be revoked or rotated at the provider.
+If a credential has ever appeared in public Git history, removing it from the current version is not sufficient; revoke or rotate it at the provider.
 
 ### Recipient data
 
-Contact lists may contain personal information.
-
-The repository therefore excludes local CSV datasets and generated logs from version control.
+Contact lists may contain personal information. General CSV data, generated logs, local environment files, and local databases are excluded from version control.
 
 ### Logging
 
-Phone numbers are masked in routine log output to reduce unnecessary exposure of recipient data.
+Routine logs mask recipient phone numbers so application output does not unnecessarily expose full contact data.
 
-### Accidental sending
+### Failure isolation
 
-Outbound messaging requires an explicit:
+A malformed or rejected record is counted as failed without terminating the remaining campaign run.
 
-```dotenv
-SMS_SEND_ENABLED=true
-```
+### Delivery semantics
 
-This is intentional.
+The campaign result models **gateway submission outcomes**, not final telecom delivery. This distinction is intentionally reflected in variable names, logs, documentation, and metrics.
 
----
+## Current limitations
 
-# Current limitations
+The public snapshot deliberately keeps the product scope small:
 
-The project deliberately keeps its scope small.
+- single-process sequential execution
+- CSV input
+- configurable request delay rather than a distributed rate limiter
+- no retry queue/backoff workflow
+- no resumable campaign checkpointing
+- no scheduling layer
+- no opt-out management
+- no multi-provider routing
+- no delivery-receipt polling
+- no campaign dashboard
+- no final delivery analytics
 
-**Current implementation:**
+These are possible product extensions, not capabilities claimed by the current implementation.
 
-- sequential single-process execution
-- CSV-based input
-- configurable delay between submissions
-- authenticated REST API integration
-- provider acknowledgement tracking
-- masked logging
+## Product evolution
 
-**Not currently implemented:**
-
-- carrier delivery-receipt polling
-- retry queues with backoff
-- resumable campaigns
-- distributed workers
-- campaign dashboard
-- scheduling
-- recipient opt-out management
-- multi-provider routing
-- final delivery analytics
-
-These are product-extension opportunities rather than capabilities claimed by the current repository.
-
----
-
-# Product evolution
-
-If this workflow were developed into a broader messaging product, the natural next layer would be:
+A natural evolution from this workflow toward a broader campaign platform would be:
 
 ```text
 Contact ingestion
@@ -445,24 +392,16 @@ Retry & failure management
 Campaign analytics
 ```
 
-That would move the system from a **batch automation workflow** toward a full **campaign delivery platform**.
+The current repository intentionally focuses on the smaller, well-defined layer: **controlled batch campaign submission**.
 
----
+## Why this project matters
 
-# Why this project matters
+The main value is not simply calling an SMS API. It demonstrates how a repetitive operational task can be translated into a small productized application with clear boundaries:
 
-The interesting part of this project is not simply calling an SMS API.
+**structured input → validation → personalization → controlled execution → observability → explicit delivery semantics**
 
-It demonstrates how a repetitive operational task can be translated into a small productized workflow with:
-
-**structured input → validation → personalization → controlled execution → observability → explicit operational boundaries**
-
-That combination of product thinking and implementation is the main purpose of this repository.
-
----
+That combination of product thinking and hands-on implementation is the purpose of this repository.
 
 ## Portfolio
 
-For the broader project context and other product/data work:
-
-**[alirezabelal.github.io](https://alirezabelal.github.io/)**
+For broader project context and other product/data work, see **[alirezabelal.github.io](https://alirezabelal.github.io/)**.
