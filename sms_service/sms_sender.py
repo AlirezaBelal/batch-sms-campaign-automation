@@ -1,44 +1,51 @@
-"""SMS API client for the batch messaging application."""
+"""SMS gateway client used by the campaign application."""
+
+import logging
+from typing import Tuple
+
 import requests
 
-from utils.logger import setup_logger
-from utils.phone_formatter import convert_to_international_format, mask_phone_number
+from utils.phone_formatter import mask_phone_number, normalize_iranian_mobile
 
-logger = setup_logger()
+logger = logging.getLogger(__name__)
 
 
-class SMSSender:
-    def __init__(self, server, username, password, endpoint, message_template, timeout=10):
-        """Initialize the SMS sender with provider configuration."""
-        self.server = server
+class SMSGatewayClient:
+    """Submit SMS requests to the configured provider gateway."""
+
+    def __init__(
+        self,
+        endpoint: str,
+        username: str,
+        password: str,
+        message_template: str,
+        timeout_seconds: int = 10,
+    ) -> None:
+        self.endpoint = endpoint
         self.username = username
         self.password = password
-        self.endpoint = endpoint
         self.message_template = message_template
-        self.timeout = timeout
+        self.timeout_seconds = timeout_seconds
+        self.session = requests.Session()
 
-    def send_sms(self, phone_number, message):
-        """Submit one message to the provider API.
+    def submit_message(self, phone_number: str, message: str) -> Tuple[bool, object]:
+        """Submit one message and report whether the provider accepted the request.
 
-        A ``True`` result means the provider API accepted the request. It does
-        not prove carrier delivery. In particular, a provider state of
-        ``Pending`` is a queue acknowledgement, not a delivery receipt.
+        A successful API response is an acknowledgement only. A provider state
+        such as ``Pending`` is not a carrier delivery receipt.
         """
         masked_phone = mask_phone_number(phone_number)
 
         try:
-            international_phone = convert_to_international_format(phone_number)
-            masked_phone = mask_phone_number(international_phone)
+            normalized_phone = normalize_iranian_mobile(phone_number)
+            masked_phone = mask_phone_number(normalized_phone)
 
-            response = requests.post(
+            response = self.session.post(
                 self.endpoint,
-                json={
-                    "message": message,
-                    "phoneNumbers": [international_phone],
-                },
+                json={"message": message, "phoneNumbers": [normalized_phone]},
                 headers={"Content-Type": "application/json"},
                 auth=(self.username, self.password),
-                timeout=self.timeout,
+                timeout=self.timeout_seconds,
             )
 
             if response.status_code in {200, 201, 202}:
@@ -52,13 +59,13 @@ class SMSSender:
 
                 if provider_state == "Pending":
                     logger.info(
-                        "Provider accepted/queued message for %s%s",
+                        "Gateway accepted/queued request for %s%s",
                         masked_phone,
                         f" (id={message_id})" if message_id else "",
                     )
                 else:
                     logger.info(
-                        "Provider accepted message request for %s (state=%s)",
+                        "Gateway accepted request for %s (state=%s)",
                         masked_phone,
                         provider_state or "unknown",
                     )
@@ -66,25 +73,25 @@ class SMSSender:
                 return True, response_data
 
             logger.error(
-                "Provider rejected message for %s with HTTP %s",
+                "Gateway rejected request for %s with HTTP %s",
                 masked_phone,
                 response.status_code,
             )
             return False, response.text[:500]
 
         except ValueError as exc:
-            logger.warning("Skipping invalid phone number %s: %s", masked_phone, exc)
+            logger.warning("Skipping invalid mobile number %s: %s", masked_phone, exc)
             return False, str(exc)
         except requests.exceptions.Timeout:
-            logger.error("Request timed out for %s", masked_phone)
+            logger.error("Gateway request timed out for %s", masked_phone)
             return False, "Request timed out"
         except requests.exceptions.ConnectionError:
-            logger.error("Connection error for %s", masked_phone)
+            logger.error("Gateway connection failed for %s", masked_phone)
             return False, "Connection error"
         except requests.RequestException as exc:
-            logger.error("Request error for %s: %s", masked_phone, exc)
+            logger.error("Gateway request failed for %s: %s", masked_phone, exc)
             return False, str(exc)
 
-    def create_message(self, name):
-        """Render the configured personalized message template."""
-        return self.message_template.format(name=(name or "").strip())
+    def render_message(self, recipient_name: str) -> str:
+        """Render the configured message template for one recipient."""
+        return self.message_template.format(name=(recipient_name or "").strip())
