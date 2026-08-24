@@ -27,6 +27,26 @@ The product goal is to reduce repetitive campaign operations while preserving:
 
 **control · repeatability · observability · data hygiene**
 
+## Complementary data pipeline
+
+For workflows that start from raw contact exports rather than a campaign-ready CSV, see **[iran-contact-data-pipeline](https://github.com/AlirezaBelal/iran-contact-data-pipeline)**.
+
+The two repositories represent complementary stages of a broader workflow:
+
+```text
+Raw contact exports
+      ↓
+Iran Contact Data Pipeline
+normalize · validate · select preferred mobile
+      ↓
+Campaign-ready contact CSV
+      ↓
+Batch SMS Campaign Automation
+personalize · simulate · submit · observe
+```
+
+They are intentionally independent repositories: the contact pipeline can be used without SMS sending, and this campaign application can accept data prepared by another trusted source. The link documents a natural upstream/downstream relationship rather than a hard runtime dependency.
+
 ## What the application does
 
 ```text
@@ -80,10 +100,7 @@ Live campaign metrics therefore describe:
 - failed submissions
 - API acceptance / queue rate
 
-Dry Run metrics are kept separate and report:
-
-- simulated records
-- validation failures
+Dry Run metrics are kept separate and report simulated records and validation failures.
 
 The application does **not** claim carrier-confirmed delivery, recipient receipt/read status, or a final SMS delivery rate.
 
@@ -155,7 +172,7 @@ The application does **not** claim carrier-confirmed delivery, recipient receipt
 
 ## Quick start: safe Dry Run
 
-### 1. Clone and install
+Clone and install:
 
 ```bash
 git clone https://github.com/AlirezaBelal/batch-sms-campaign-automation.git
@@ -181,9 +198,7 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-### 2. Create local configuration
-
-Linux / macOS:
+Create local configuration:
 
 ```bash
 cp .env.example .env
@@ -205,7 +220,7 @@ SMS_CSV_FILE_PATH=examples/contacts.example.csv
 
 No SMS credentials are required for Dry Run.
 
-### 3. Run the simulation
+Run the simulation:
 
 ```bash
 python main.py
@@ -219,19 +234,19 @@ Expected summary shape:
 Dry run completed. Total processed: 2, Simulated: 2, Failed validation: 0
 ```
 
-The bundled `examples/contacts.example.csv` contains synthetic-looking test data intended only for Dry Run and format demonstration. **Do not use the bundled example recipients for live sending.**
+The bundled example recipients are synthetic-looking demonstration data. **Do not use them for live sending.**
 
 ## SMS Gateway for Android setup
 
-The default gateway configuration in this repository is compatible with **SMS Gateway for Android**. For live sending, install and configure the Android application using the provider's official installation guide:
+The default gateway configuration is compatible with **SMS Gateway for Android**. For live sending, use the provider's official installation guide:
 
 **[SMS Gateway for Android — Installation Guide](https://docs.sms-gate.app/installation/)**
 
-Use the official installation page rather than a version-specific APK link so the setup instructions continue to point to the provider's current release.
+Use the official installation page rather than a version-specific APK link so the documentation continues to point to the provider's current release.
 
-After installing the Android gateway, configure the credentials and endpoint issued by your selected gateway mode in your local `.env` file. Provider credentials belong only in local/environment configuration and must never be committed to the repository.
+After installation, configure the credentials and endpoint for your selected gateway mode in the local `.env` file. Provider credentials must never be committed to the repository.
 
-The application keeps the gateway endpoint configurable through `SMS_SERVER_ADDRESS` and `SMS_API_ENDPOINT`, so the campaign layer is not tied to a hard-coded deployment URL.
+The application keeps the endpoint configurable through `SMS_SERVER_ADDRESS` and `SMS_API_ENDPOINT`; the campaign layer is not tied to a hard-coded deployment URL.
 
 ## Live campaign execution
 
@@ -275,7 +290,7 @@ Real recipient datasets should never be committed to the repository.
 
 | Environment variable | Purpose | Default |
 |---|---|---|
-| `SMS_DRY_RUN` | Run full validation/simulation with no gateway request | `false` in code; `true` in `.env.example` |
+| `SMS_DRY_RUN` | Full validation/simulation with no gateway request | `false` in code; `true` in `.env.example` |
 | `SMS_SEND_ENABLED` | Explicit live-send safety switch | `false` |
 | `SMS_SERVER_ADDRESS` | Provider base URL | provider-specific default in code |
 | `SMS_API_ENDPOINT` | Override provider message endpoint | derived from base URL |
@@ -301,7 +316,7 @@ SMS_SEND_ENABLED=true
 
 **Dry Run takes precedence and no gateway request is sent.**
 
-## Tests
+## Tests and CI
 
 Run locally:
 
@@ -309,30 +324,9 @@ Run locally:
 python -m unittest discover -s tests -v
 ```
 
-Current tests cover:
+Tests cover mobile-number normalization, invalid/non-mobile rejection, privacy-safe masking, campaign processing, API acceptance aggregation, missing-phone handling, Dry Run simulation, and Dry Run validation failures.
 
-- Iranian mobile-number normalization
-- invalid/non-mobile rejection
-- privacy-safe phone masking
-- campaign row processing
-- API acceptance aggregation
-- missing-phone handling
-- Dry Run simulation without gateway submission
-- Dry Run validation failures
-
-## Continuous Integration
-
-GitHub Actions runs automatically on pushes and pull requests to `master`.
-
-CI verifies:
-
-- dependency installation
-- Python compilation / syntax
-- dependency consistency
-- unit tests across supported Python versions
-- Docker image buildability
-
-The CI badge at the top of this README reflects the latest workflow state.
+GitHub Actions runs automatically on pushes and pull requests to `master`, checking dependency installation, Python compilation, dependency consistency, unit tests across supported Python versions, and Docker image buildability.
 
 ## Docker
 
@@ -342,7 +336,7 @@ Build:
 docker build -t batch-sms-campaign-automation .
 ```
 
-Run safely using the example Dry Run configuration:
+Run safely with the example Dry Run configuration:
 
 ```bash
 docker run --rm \
@@ -352,21 +346,16 @@ docker run --rm \
   batch-sms-campaign-automation
 ```
 
-For live operation, mount your private campaign data rather than baking it into the image.
+For live operation, mount private campaign data rather than baking it into the image.
 
 ## Operational safeguards
 
-**Credentials** — secrets are loaded from environment variables and `.env` is excluded from version control.
-
-**Recipient privacy** — contact datasets and generated logs are excluded from source control; routine logs mask phone numbers.
-
-**Safe simulation** — Dry Run validates the campaign without network submission and does not require provider credentials.
-
-**Explicit live opt-in** — live sending requires both `SMS_DRY_RUN=false` and `SMS_SEND_ENABLED=true`.
-
-**Failure isolation** — one malformed record does not terminate the remaining campaign.
-
-**Credential rotation** — any credential that has ever been exposed publicly or committed to Git history must be revoked or rotated; deleting it from the current branch is not sufficient.
+- **Credentials:** secrets are environment-backed and `.env` is excluded from version control.
+- **Recipient privacy:** contact datasets and generated logs are excluded from source control; routine logs mask phone numbers.
+- **Safe simulation:** Dry Run validates the campaign without network submission and does not require provider credentials.
+- **Explicit live opt-in:** live sending requires both `SMS_DRY_RUN=false` and `SMS_SEND_ENABLED=true`.
+- **Failure isolation:** one malformed record does not terminate the remaining campaign.
+- **Credential rotation:** any credential ever exposed publicly or committed to Git history must be revoked or rotated.
 
 ## Current scope and limitations
 
