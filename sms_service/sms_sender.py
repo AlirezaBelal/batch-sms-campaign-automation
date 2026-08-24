@@ -1,101 +1,90 @@
-"""
-SMS sending service for the SMS sending application
-"""
+"""SMS API client for the batch messaging application."""
 import requests
 
 from utils.logger import setup_logger
-from utils.phone_formatter import convert_to_international_format
+from utils.phone_formatter import convert_to_international_format, mask_phone_number
 
 logger = setup_logger()
 
 
 class SMSSender:
-    def __init__(self, server, username, password, endpoint, timeout=10):
-        """
-        Initialize the SMS sender
-        
-        Args:
-            server (str): Server address
-            username (str): Authentication username
-            password (str): Authentication password
-            endpoint (str): API endpoint
-            timeout (int): Request timeout in seconds
-        """
+    def __init__(self, server, username, password, endpoint, message_template, timeout=10):
+        """Initialize the SMS sender with provider configuration."""
         self.server = server
         self.username = username
         self.password = password
         self.endpoint = endpoint
+        self.message_template = message_template
         self.timeout = timeout
 
     def send_sms(self, phone_number, message):
-        """
-        Send SMS to a single phone number
-        
-        Args:
-            phone_number (str): Recipient phone number
-            message (str): Message text
-            
-        Returns:
-            tuple: (success, response)
-        """
-        # Convert phone number to international format
-        international_phone = convert_to_international_format(phone_number)
+        """Submit one message to the provider API.
 
-        headers = {
-            "Content-Type": "application/json"
-        }
-
-        payload = {
-            "message": message,
-            "phoneNumbers": [international_phone]
-        }
+        A ``True`` result means the provider API accepted the request. It does
+        not prove carrier delivery. In particular, a provider state of
+        ``Pending`` is a queue acknowledgement, not a delivery receipt.
+        """
+        masked_phone = mask_phone_number(phone_number)
 
         try:
+            international_phone = convert_to_international_format(phone_number)
+            masked_phone = mask_phone_number(international_phone)
+
             response = requests.post(
                 self.endpoint,
-                json=payload,
-                headers=headers,
+                json={
+                    "message": message,
+                    "phoneNumbers": [international_phone],
+                },
+                headers={"Content-Type": "application/json"},
                 auth=(self.username, self.password),
-                timeout=self.timeout
+                timeout=self.timeout,
             )
 
-            if response.status_code in [200, 201, 202]:
-                response_json = response.json()
-                if response_json.get('state') == 'Pending':
-                    logger.info(
-                        f"Message queued for sending to {phone_number} ({international_phone}) with ID: {response_json.get('id')}")
-                else:
-                    logger.info(f"Message successfully sent to {phone_number} ({international_phone})")
-                return True, response_json
-            else:
-                logger.error(
-                    f"Error sending message to {phone_number} ({international_phone}): "
-                    f"{response.status_code} - {response.text}"
-                )
-                return False, response.text
+            if response.status_code in {200, 201, 202}:
+                try:
+                    response_data = response.json()
+                except ValueError:
+                    response_data = {"raw_response": response.text[:500]}
 
+                provider_state = response_data.get("state")
+                message_id = response_data.get("id")
+
+                if provider_state == "Pending":
+                    logger.info(
+                        "Provider accepted/queued message for %s%s",
+                        masked_phone,
+                        f" (id={message_id})" if message_id else "",
+                    )
+                else:
+                    logger.info(
+                        "Provider accepted message request for %s (state=%s)",
+                        masked_phone,
+                        provider_state or "unknown",
+                    )
+
+                return True, response_data
+
+            logger.error(
+                "Provider rejected message for %s with HTTP %s",
+                masked_phone,
+                response.status_code,
+            )
+            return False, response.text[:500]
+
+        except ValueError as exc:
+            logger.warning("Skipping invalid phone number %s: %s", masked_phone, exc)
+            return False, str(exc)
         except requests.exceptions.Timeout:
-            logger.error(f"Timeout sending message to {phone_number} ({international_phone})")
+            logger.error("Request timed out for %s", masked_phone)
             return False, "Request timed out"
         except requests.exceptions.ConnectionError:
-            logger.error(f"Connection error sending message to {phone_number} ({international_phone})")
+            logger.error("Connection error for %s", masked_phone)
             return False, "Connection error"
-        except Exception as e:
-            logger.error(f"Exception sending message to {phone_number} ({international_phone}): {str(e)}")
-            return False, str(e)
+        except requests.RequestException as exc:
+            logger.error("Request error for %s: %s", masked_phone, exc)
+            return False, str(exc)
 
     def create_message(self, name):
-        """
-        Create a personalized message for the recipient
-        
-        Args:
-            name (str): Recipient name
-            
-        Returns:
-            str: Personalized message
-        """
-        return f"""{name} عزیز
-سال نوت مبارک! امیدوارم سفره هفت‌سینت پر برکت و زندگیت سرشار از شادی و سلامتی باشه. 
-دلت شاد، جیبت پر پول و خونه‌ت پر از عشق و محبت.
-به امید دیدنت در سال جدید!
-علیرضا بلال"""
+        """Render the configured personalized message template."""
+        return self.message_template.format(name=(name or "").strip())
