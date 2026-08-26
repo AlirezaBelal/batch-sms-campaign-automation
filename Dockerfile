@@ -6,8 +6,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && groupadd --system app \
+    && useradd --system --gid app --create-home app
 
-COPY . .
+COPY --chown=app:app . .
+RUN mkdir -p /app/logs && chown -R app:app /app
+
+USER app
 
 CMD ["python", "main.py"]

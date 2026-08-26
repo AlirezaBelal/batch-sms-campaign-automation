@@ -127,5 +127,9 @@ class CampaignRunner:
             if self.request_delay_seconds:
                 time.sleep(self.request_delay_seconds)
         except Exception as exc:
-            logger.error("Failed to process row %s: %s", row_number, exc)
+            logger.error(
+                "Failed to process row %s due to %s; exception details omitted to protect recipient data",
+                row_number,
+                type(exc).__name__,
+            )
             result.failed += 1

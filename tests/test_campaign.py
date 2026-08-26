@@ -25,6 +25,11 @@ class FakeGateway:
         return True, {"state": "Pending"}
 
 
+class ExplodingGateway(FakeGateway):
+    def render_message(self, recipient_name):
+        raise RuntimeError(f"sensitive-recipient={recipient_name}")
+
+
 class CampaignRunnerTests(unittest.TestCase):
     def test_processes_valid_rows_and_tracks_api_acceptance(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -124,6 +129,31 @@ class CampaignRunnerTests(unittest.TestCase):
             self.assertEqual(result.simulated, 0)
             self.assertEqual(result.failed, 1)
             self.assertEqual(gateway.submissions, [])
+
+    def test_unexpected_error_logs_do_not_include_recipient_data(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            input_file = Path(temp_dir) / "contacts.csv"
+            input_file.write_text(
+                "first_name_per,selected_phone\nHighlySensitiveName,09121234567\n",
+                encoding="utf-8",
+            )
+
+            campaign = CampaignRunner(
+                gateway=ExplodingGateway(),
+                input_file=str(input_file),
+                recipient_name_column="first_name_per",
+                recipient_phone_column="selected_phone",
+            )
+
+            with self.assertLogs("campaign", level="ERROR") as captured:
+                result = campaign.run()
+
+            log_output = "\n".join(captured.output)
+            self.assertEqual(result.failed, 1)
+            self.assertIn("RuntimeError", log_output)
+            self.assertNotIn("HighlySensitiveName", log_output)
+            self.assertNotIn("09121234567", log_output)
+            self.assertNotIn("sensitive-recipient", log_output)
 
 
 if __name__ == "__main__":
