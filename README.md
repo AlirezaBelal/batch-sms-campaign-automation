@@ -147,6 +147,7 @@ The application does **not** claim carrier-confirmed delivery, recipient receipt
 ├── .env.example
 ├── requirements.txt
 ├── Dockerfile
+├── SECURITY.md
 ├── .dockerignore
 ├── examples/
 │   └── contacts.example.csv
@@ -159,6 +160,7 @@ The application does **not** claim carrier-confirmed delivery, recipient receipt
 │   └── phone_formatter.py
 ├── tests/
 │   ├── test_campaign.py
+│   ├── test_main.py
 │   └── test_phone_formatter.py
 └── .github/workflows/
     └── ci.yml
@@ -166,7 +168,7 @@ The application does **not** claim carrier-confirmed delivery, recipient receipt
 
 ## Requirements
 
-- Python 3.8+
+- Python **3.10+**
 - an SMS gateway only for live sending
 - a CSV file containing recipient names and Iranian mobile numbers
 
@@ -324,9 +326,9 @@ Run locally:
 python -m unittest discover -s tests -v
 ```
 
-Tests cover mobile-number normalization, invalid/non-mobile rejection, privacy-safe masking, campaign processing, API acceptance aggregation, missing-phone handling, Dry Run simulation, and Dry Run validation failures.
+Tests cover mobile-number normalization, invalid/non-mobile rejection, privacy-safe masking, campaign processing, API acceptance aggregation, missing-phone handling, Dry Run simulation, Dry Run validation failures, runtime send-safety configuration, and protection against recipient data leaking through unexpected exception logs.
 
-GitHub Actions runs automatically on pushes and pull requests to `master`, checking dependency installation, Python compilation, dependency consistency, unit tests across supported Python versions, and Docker image buildability.
+GitHub Actions runs automatically on pushes and pull requests to `master`, checking dependency installation, Python compilation, dependency consistency, unit tests on **Python 3.10 through 3.14**, a runtime-dependency vulnerability audit with `pip-audit`, and Docker image buildability.
 
 ## Docker
 
@@ -335,6 +337,8 @@ Build:
 ```bash
 docker build -t batch-sms-campaign-automation .
 ```
+
+The image runs the application as a dedicated non-root `app` user.
 
 Run safely with the example Dry Run configuration:
 
@@ -351,11 +355,15 @@ For live operation, mount private campaign data rather than baking it into the i
 ## Operational safeguards
 
 - **Credentials:** secrets are environment-backed and `.env` is excluded from version control.
-- **Recipient privacy:** contact datasets and generated logs are excluded from source control; routine logs mask phone numbers.
+- **Recipient privacy:** contact datasets and generated logs are excluded from source control; routine logs mask phone numbers and unexpected row-processing errors omit exception details.
 - **Safe simulation:** Dry Run validates the campaign without network submission and does not require provider credentials.
 - **Explicit live opt-in:** live sending requires both `SMS_DRY_RUN=false` and `SMS_SEND_ENABLED=true`.
 - **Failure isolation:** one malformed record does not terminate the remaining campaign.
+- **Dependency monitoring:** CI audits runtime dependencies for known vulnerabilities.
+- **Container least privilege:** the Docker image runs as a non-root application user.
 - **Credential rotation:** any credential ever exposed publicly or committed to Git history must be revoked or rotated.
+
+See [SECURITY.md](SECURITY.md) for vulnerability-reporting and operational-security guidance.
 
 ## Current scope and limitations
 
