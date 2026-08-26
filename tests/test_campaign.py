@@ -1,8 +1,12 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock
+
+import requests
 
 from campaign import CampaignRunner
+from sms_service import SMSGatewayClient
 
 
 class FakeGateway:
@@ -154,6 +158,71 @@ class CampaignRunnerTests(unittest.TestCase):
             self.assertNotIn("HighlySensitiveName", log_output)
             self.assertNotIn("09121234567", log_output)
             self.assertNotIn("sensitive-recipient", log_output)
+
+
+class SMSGatewayClientTests(unittest.TestCase):
+    def make_client(self):
+        return SMSGatewayClient(
+            endpoint="https://gateway.example/messages",
+            username="test-user",
+            password="test-password",
+            message_template="Hello {name}",
+            timeout_seconds=3,
+        )
+
+    def test_submit_message_normalizes_recipient_and_masks_logs(self):
+        client = self.make_client()
+        response = Mock()
+        response.status_code = 202
+        response.json.return_value = {"state": "Pending", "id": "example-id"}
+        response.text = ""
+        client.session.post = Mock(return_value=response)
+
+        with self.assertLogs("sms_service.sms_sender", level="INFO") as captured:
+            accepted, response_data = client.submit_message("09121234567", "Hello Ali")
+
+        self.assertTrue(accepted)
+        self.assertEqual(response_data["state"], "Pending")
+        client.session.post.assert_called_once_with(
+            "https://gateway.example/messages",
+            json={"message": "Hello Ali", "phoneNumbers": ["+989121234567"]},
+            headers={"Content-Type": "application/json"},
+            auth=("test-user", "test-password"),
+            timeout=3,
+        )
+
+        log_output = "\n".join(captured.output)
+        self.assertIn("***4567", log_output)
+        self.assertNotIn("09121234567", log_output)
+        self.assertNotIn("+989121234567", log_output)
+
+    def test_timeout_returns_failure_without_raising(self):
+        client = self.make_client()
+        client.session.post = Mock(side_effect=requests.exceptions.Timeout())
+
+        with self.assertLogs("sms_service.sms_sender", level="ERROR") as captured:
+            accepted, detail = client.submit_message("09121234567", "Hello Ali")
+
+        self.assertFalse(accepted)
+        self.assertEqual(detail, "Request timed out")
+        self.assertNotIn("09121234567", "\n".join(captured.output))
+
+    def test_rejected_response_does_not_log_full_recipient(self):
+        client = self.make_client()
+        response = Mock()
+        response.status_code = 429
+        response.text = "rate limited"
+        client.session.post = Mock(return_value=response)
+
+        with self.assertLogs("sms_service.sms_sender", level="ERROR") as captured:
+            accepted, detail = client.submit_message("09121234567", "Hello Ali")
+
+        self.assertFalse(accepted)
+        self.assertEqual(detail, "rate limited")
+        log_output = "\n".join(captured.output)
+        self.assertIn("***4567", log_output)
+        self.assertNotIn("09121234567", log_output)
+        self.assertNotIn("+989121234567", log_output)
 
 
 if __name__ == "__main__":
