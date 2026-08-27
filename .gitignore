@@ -32,9 +32,18 @@ logs/
 # Local configuration
 config.local.py
 
-# CSV data files - may contain sensitive information
+# Recipient/contact datasets - may contain sensitive information
 data/
+inputs/
 *.csv
+*.tsv
+*.xlsx
+*.xls
+*.parquet
+*.feather
+*.jsonl
+*.vcf
+!examples/contacts.example.csv
 
 # Authentication credentials
 credentials.json
