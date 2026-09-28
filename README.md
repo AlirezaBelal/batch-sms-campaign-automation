@@ -6,9 +6,9 @@
 
 This project addresses a practical operational problem:
 
-**How can a personalized SMS campaign be executed for thousands of contacts without preparing messages one by one, while keeping the workflow controlled, observable, repeatable, and safe to operate?**
+**How can a personalized SMS campaign be prepared and submitted through a controlled, observable workflow without preparing messages one by one?**
 
-The original workflow was used for a campaign involving approximately **5,000 contacts**. This repository is a sanitized portfolio snapshot: recipient data, live credentials, and campaign-specific content are intentionally excluded.
+This repository is a sanitized portfolio snapshot: recipient data, live credentials, and campaign-specific content are intentionally excluded.
 
 ## Product context
 
