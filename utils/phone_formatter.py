@@ -28,6 +28,8 @@ def normalize_iranian_mobile(phone_number: object) -> str:
         raise ValueError("Invalid Iranian mobile number")
 
     digits = re.sub(r"\D", "", raw_value)
+    if raw_value.startswith("+") and not digits.startswith("98"):
+        raise ValueError("Invalid Iranian mobile number")
 
     if digits.startswith("0098"):
         digits = digits[2:]

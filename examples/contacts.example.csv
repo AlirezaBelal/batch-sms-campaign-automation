@@ -1,3 +1,3 @@
-first_name_per,selected_phone
-Sample User A,09000000000
-Sample User B,+989000000001
+first_name_per,selected_phone,consent_status,consent_scope,consent_source,consent_at
+Sample User A,09000000000,granted,demo,synthetic-fixture-only,2020-01-01T00:00:00Z
+Sample User B,+989000000001,granted,demo,synthetic-fixture-only,2020-01-01T00:00:00Z

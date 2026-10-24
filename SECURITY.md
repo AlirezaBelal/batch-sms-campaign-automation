@@ -28,3 +28,19 @@ Please report issues involving:
 This repository is a portfolio snapshot of a campaign-submission workflow, not a managed messaging service. Operators are responsible for securing deployment credentials, campaign data, and the host environment.
 
 The provided `.env.example` starts in Dry Run mode and disables live sending. Real credentials and recipient datasets must remain outside source control. Any credential that is accidentally exposed in a public repository or log should be revoked or rotated immediately.
+
+## Consent and operational boundaries
+
+Missing consent metadata, an exclusion match, incomplete live authorization or
+failed preflight must prevent submission. Consent metadata is an operator assertion,
+not independent legal evidence. Do not use purchased, scraped or unverified lists.
+Operators must verify current jurisdiction, carrier and provider requirements and
+maintain an authorized opt-out list; this application does not process inbound SMS.
+
+Treat the local journal as sensitive pseudonymous data. Keep it on a private local
+filesystem with restrictive permissions and backups protected under a retention
+policy. Never remove state or choose a new campaign ID to retry uncertain outcomes.
+Reconcile provider status first. No exactly-once or carrier-delivery guarantee exists.
+
+All maintenance tests must remain offline with synthetic fixtures and mocked HTTP.
+A real test requires separate explicit approval and a maintainer-controlled number.

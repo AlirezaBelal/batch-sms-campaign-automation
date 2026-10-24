@@ -58,3 +58,9 @@ test_local*
 
 # Generated reports
 reports/
+
+.venv/
+.coverage*
+htmlcov/
+campaign-state/
+*.lock
