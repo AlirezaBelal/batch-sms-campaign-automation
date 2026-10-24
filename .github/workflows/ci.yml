@@ -40,7 +40,7 @@ jobs:
         run: python -m pip check
 
       - name: Compile application
-        run: python -m compileall -q main.py campaign.py config.py sms_service utils tests
+        run: python -m compileall -q main.py campaign.py config.py manifest.py sms_service utils tests
 
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
@@ -71,7 +71,7 @@ jobs:
 
       - name: Enforce test coverage
         run: |
-          coverage run --source=campaign,config,sms_service,utils -m unittest discover -s tests -v
+          coverage run --source=main,campaign,config,manifest,sms_service,utils -m unittest discover -s tests -v
           coverage report --show-missing --fail-under=80
 
   security-audit:
@@ -130,10 +130,9 @@ jobs:
 
       - name: Smoke test Dry Run
         run: |
-          docker run --rm \
+          docker run --rm --network none \
             -e SMS_DRY_RUN=true \
             -e SMS_SEND_ENABLED=false \
             -e SMS_CSV_FILE_PATH=/tmp/contacts.csv \
-            -e SMS_LOG_FILE=/tmp/sms_campaign.log \
             -v "$PWD/examples/contacts.example.csv:/tmp/contacts.csv:ro" \
             batch-sms-campaign-automation:ci

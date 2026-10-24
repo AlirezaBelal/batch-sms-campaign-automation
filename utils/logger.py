@@ -1,22 +1,12 @@
-"""Application logging configuration."""
+"""Console diagnostics contain aggregate counts and fixed classifications only."""
 
 import logging
-from pathlib import Path
-
-from config import LOG_FILE, LOG_FORMAT, LOG_LEVEL
 
 
-def configure_logging() -> None:
-    """Configure console and file logging for the campaign application."""
-    log_path = Path(LOG_FILE)
-    if log_path.parent != Path("."):
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-
+def configure_logging():
     logging.basicConfig(
-        level=getattr(logging, LOG_LEVEL.upper(), logging.INFO),
-        format=LOG_FORMAT,
-        handlers=[
-            logging.FileHandler(log_path, encoding="utf-8"),
-            logging.StreamHandler(),
-        ],
+        level=logging.INFO, format="%(levelname)s %(name)s: %(message)s"
     )
+    # HTTP library debug logs may include endpoint URLs; never enable them here.
+    for name in ("urllib3", "requests"):
+        logging.getLogger(name).setLevel(logging.CRITICAL)

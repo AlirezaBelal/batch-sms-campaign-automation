@@ -27,6 +27,8 @@ class IranianMobileNormalizationTests(unittest.TestCase):
             "phone: 09121234567",
             "98+9121234567",
             "+98+9121234567",
+            "+09121234567",
+            "+9121234567",
         ):
             with self.subTest(value=value):
                 with self.assertRaises(ValueError):

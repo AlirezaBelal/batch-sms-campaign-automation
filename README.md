@@ -2,393 +2,158 @@
 
 [![CI](https://github.com/AlirezaBelal/batch-sms-campaign-automation/actions/workflows/ci.yml/badge.svg)](https://github.com/AlirezaBelal/batch-sms-campaign-automation/actions/workflows/ci.yml)
 
-> A product-oriented Python workflow for controlled, personalized batch SMS campaigns with safe simulation, input validation, request pacing, gateway submission, and privacy-aware logging.
+A small Python CLI for previewing personalized, consent-based SMS campaigns and deliberately submitting them to **SMS Gateway for Android**. Dry Run is the default. Gateway acceptance is **not carrier delivery**.
 
-This project addresses a practical operational problem:
+## Quick start: no SMS, credentials or runtime network
 
-**How can a personalized SMS campaign be prepared and submitted through a controlled, observable workflow without preparing messages one by one?**
-
-This repository is a sanitized portfolio snapshot: recipient data, live credentials, and campaign-specific content are intentionally excluded.
-
-## Product context
-
-At campaign scale, the operating problem is larger than simply calling an SMS API:
-
-- contact data can be inconsistent
-- phone numbers can use different representations
-- messages need per-recipient personalization
-- outbound requests need pacing
-- one bad record should not terminate the campaign
-- credentials and contact data must remain outside source control
-- operators need a clear execution summary
-- gateway acknowledgement must not be confused with final carrier delivery
-
-The product goal is to reduce repetitive campaign operations while preserving:
-
-**control · repeatability · observability · data hygiene**
-
-## Complementary data pipeline
-
-For workflows that start from raw contact exports rather than a campaign-ready CSV, see **[iran-contact-data-pipeline](https://github.com/AlirezaBelal/iran-contact-data-pipeline)**.
-
-The two repositories represent complementary stages of a broader workflow:
-
-```text
-Raw contact exports
-      ↓
-Iran Contact Data Pipeline
-normalize · validate · select preferred mobile
-      ↓
-Campaign-ready contact CSV
-      ↓
-Batch SMS Campaign Automation
-personalize · simulate · submit · observe
-```
-
-They are intentionally independent repositories: the contact pipeline can be used without SMS sending, and this campaign application can accept data prepared by another trusted source. The link documents a natural upstream/downstream relationship rather than a hard runtime dependency.
-
-## What the application does
-
-```text
-Contact CSV
-    ↓
-Schema validation
-    ↓
-Campaign orchestration
-    ↓
-Recipient extraction
-    ↓
-Message rendering
-    ↓
-Iranian mobile validation / normalization
-    ↓
-┌──────────────────────────┬──────────────────────────┐
-│ Dry Run                  │ Live Run                 │
-│ validate + simulate      │ rate-controlled submit   │
-│ no gateway request       │ external SMS gateway     │
-└──────────────────────────┴──────────────────────────┘
-    ↓
-CampaignResult + privacy-aware logs
-```
-
-## Core capabilities
-
-- **Campaign orchestration** through a dedicated `CampaignRunner`
-- **CSV batch processing** with row-level failure isolation
-- **Personalized message rendering** through a configurable template
-- **Iranian mobile normalization** into a consistent `+98...` representation
-- **Safe Dry Run mode** that validates the full campaign without network submission
-- **Authenticated REST gateway integration** for live runs
-- **Configurable request pacing** between live submissions
-- **Masked phone-number logging**
-- **Environment-backed configuration and secret handling**
-- **Dockerized execution**
-- **Automated tests and GitHub Actions CI**
-
-## Delivery semantics
-
-This repository implements a **campaign submission workflow**, not a complete messaging platform.
-
-A successful gateway response means the provider accepted or queued the request.
-
-> A state such as `Pending` is a provider queue acknowledgement. It is **not** a carrier delivery receipt and does not prove that the recipient received the SMS.
-
-Live campaign metrics therefore describe:
-
-- contacts processed
-- API accepted / queued requests
-- failed submissions
-- API acceptance / queue rate
-
-Dry Run metrics are kept separate and report simulated records and validation failures.
-
-The application does **not** claim carrier-confirmed delivery, recipient receipt/read status, or a final SMS delivery rate.
-
-## Architecture
-
-```text
-                 ┌────────────────────┐
-                 │    Contact CSV     │
-                 └─────────┬──────────┘
-                           ▼
-                 ┌────────────────────┐
-                 │   CampaignRunner   │
-                 │    campaign.py     │
-                 └─────────┬──────────┘
-                           ▼
-             ┌──────────────────────────┐
-             │     SMSGatewayClient     │
-             │ render + validate + REST │
-             └─────────────┬────────────┘
-                           │
-                Dry Run? ──┤
-                    │      │
-                  yes      no
-                    │      │
-                    ▼      ▼
-              simulation  gateway API
-                    │      │
-                    └──┬───┘
-                       ▼
-               ┌──────────────┐
-               │CampaignResult│
-               └──────────────┘
-```
-
-`main.py` is the composition root: it configures logging, validates runtime safety settings, wires the gateway client to the campaign runner, and reports the final result.
-
-## Repository structure
-
-```text
-.
-├── main.py
-├── campaign.py
-├── config.py
-├── .env.example
-├── requirements.txt
-├── Dockerfile
-├── SECURITY.md
-├── .dockerignore
-├── examples/
-│   └── contacts.example.csv
-├── sms_service/
-│   ├── __init__.py
-│   └── sms_sender.py
-├── utils/
-│   ├── __init__.py
-│   ├── logger.py
-│   └── phone_formatter.py
-├── tests/
-│   ├── test_campaign.py
-│   ├── test_main.py
-│   └── test_phone_formatter.py
-└── .github/workflows/
-    └── ci.yml
-```
-
-## Requirements
-
-- Python **3.10+**
-- an SMS gateway only for live sending
-- a CSV file containing recipient names and Iranian mobile numbers
-
-## Quick start: safe Dry Run
-
-Clone and install:
+Requires Python 3.10–3.14. Dependency installation needs package access; the installed demonstration runs offline.
 
 ```bash
 git clone https://github.com/AlirezaBelal/batch-sms-campaign-automation.git
 cd batch-sms-campaign-automation
 python -m venv .venv
-```
-
-Linux / macOS:
-
-```bash
+# Linux/macOS:
 source .venv/bin/activate
-```
-
-Windows PowerShell:
-
-```powershell
-.venv\Scripts\activate
-```
-
-Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-Create local configuration:
-
-```bash
-cp .env.example .env
-```
-
-Windows PowerShell:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-The example configuration starts safely with:
-
-```dotenv
-SMS_DRY_RUN=true
-SMS_SEND_ENABLED=false
-SMS_CSV_FILE_PATH=examples/contacts.example.csv
-```
-
-No SMS credentials are required for Dry Run.
-
-Run the simulation:
-
-```bash
+# Windows PowerShell instead: .venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 python main.py
 ```
 
-Dry Run executes CSV parsing, schema validation, message rendering, mobile-number normalization, error handling, aggregation, and logging — but sends **no HTTP request** to the SMS gateway.
+No `.env` is required. Optional local configuration: copy `.env.example` to `.env` (PowerShell: `Copy-Item .env.example .env`).
 
-Expected summary shape:
+Output is two aggregate JSON lines: `preflight`, then `summary`. The bundled synthetic fixture produces:
 
 ```text
-Dry run completed. Total processed: 2, Simulated: 2, Failed validation: 0
+mode=dry_run, total_input=2, valid_records=2, eligible_recipients=2,
+simulated=2, accepted_or_queued=0, invalid_records=0, exit_code=0
 ```
 
-The bundled example recipients are synthetic-looking demonstration data. **Do not use them for live sending.**
+This is a readable extract, not the literal JSON. The example consent records are **fictional test assertions**. Never submit the example numbers. Live mode rejects the bundled filename and `demo` consent scope.
 
-## SMS Gateway for Android setup
+## Input and permission to send
 
-The default gateway configuration is compatible with **SMS Gateway for Android**. For live sending, use the provider's official installation guide:
+CSV must be UTF-8 (BOM accepted), with distinct headers. Default name/phone columns are `first_name_per` and `selected_phone`; names may be empty. Supported mobile formats include `09…`, `9…`, `989…`, `+989…` and `00989…`, with Persian/Arabic digits and visual separators. Ambiguous numbers and embedded text are rejected.
 
-**[SMS Gateway for Android — Installation Guide](https://docs.sms-gate.app/installation/)**
+Live eligibility additionally requires all of:
 
-Use the official installation page rather than a version-specific APK link so the documentation continues to point to the provider's current release.
+| Column | Required value |
+|---|---|
+| `consent_status` | `granted` |
+| `consent_scope` | Exact match to the reviewed `SMS_CONSENT_SCOPE` |
+| `consent_source` | Nonempty reference to the operator's evidence record, at most 128 characters |
+| `consent_at` | ISO timestamp with timezone, not in the future |
 
-After installation, configure the credentials and endpoint for your selected gateway mode in the local `.env` file. Provider credentials must never be committed to the repository.
+These fields are **operator assertions**, not independent proof of lawful consent. Keep trustworthy evidence at its authorized source; do not copy private evidence into this repository. Missing, withdrawn, mismatched or incomplete assertions deny eligibility. Legacy two-column CSVs can be inspected in Dry Run but their records are ineligible.
 
-The application keeps the endpoint configurable through `SMS_SERVER_ADDRESS` and `SMS_API_ENDPOINT`; the campaign layer is not tied to a hard-coded deployment URL.
+Only use authorized recipients whose permission covers the actual message class. Purchased, scraped and unverified lists are prohibited. The optional upstream [Iran Contact Data Pipeline](https://github.com/AlirezaBelal/iran-contact-data-pipeline) can normalize data; it does **not** establish consent.
 
-## Live campaign execution
+For Iranian recipients, review current [CRA guidance](https://www.cra.ir/), the [195 complaints service](https://195.cra.ir/), carrier rules and the gateway's terms before use. Public [Ministry guidance](https://www.ict.gov.ir/fa/newsagency/25160) addresses subscriber permission and unwanted promotional SMS. This tool does not certify legal compliance, check carrier suppression registers or authorize use of a personal SIM for campaigns.
 
-Use live mode only after reviewing the campaign and configuring valid provider credentials.
+### Opt-out exclusions
 
-```dotenv
-SMS_DRY_RUN=false
-SMS_SEND_ENABLED=true
+Maintain a private UTF-8 CSV with header `phone`, one number per row. It is mandatory in live mode; a reviewed empty list contains only the header. Set `SMS_EXCLUSIONS_FILE` to its path. Invalid entries abort preflight. Normalized exclusions override consent and duplicates.
 
-SMS_USERNAME=your_username
-SMS_PASSWORD=your_password
-SMS_SERVER_ADDRESS=https://your-provider.example
+Operators must receive withdrawals through their own accessible channel, update this list promptly and recheck it before each run. The tool does not receive inbound SMS or implement automatic STOP handling. Do not continue a running campaign after learning of a withdrawal; interrupt it and reconcile before proceeding.
 
-SMS_CSV_FILE_PATH=data/contacts.csv
-SMS_MESSAGE_TEMPLATE=Hello {name}, this is a sample message.
-SMS_DELAY_BETWEEN_SMS=2
-```
+### Validation, duplicates and personalization
 
-Then run:
+The entire input is validated and rendered before submission. Live mode rejects any invalid records. Limits: 5 MiB per CSV, 10,000 rows, 100-character names and 480 UTF-16 message units. Only plain `{name}` substitution is supported; attribute access, conversions and format specifications are rejected. Control characters in names are rejected; Persian zero-width non-joiners are allowed.
 
-```bash
-python main.py
-```
+Numbers are normalized before deduplication. The first valid occurrence supplies the message; **all** occurrences must assert consent. A contradictory duplicate denies eligibility for that number. Dry Run reports invalid rows, duplicates, exclusions and missing consent without sending anything.
 
-For a first integration test, use a CSV containing only a mobile number you control.
+## Optional live execution: restricted and explicit
 
-## Input format
+No live test is part of CI or repository maintenance. A first real integration test requires **separate explicit approval** and only a maintainer-controlled number with documented consent. Never test with the bundled example recipients.
 
-Default columns:
+1. Review the recipients, evidence, exclusions, rendered template, provider/carrier permissions and costs privately.
+2. Configure a private `.env` with credentials, your campaign CSV, non-demo consent scope and exclusion CSV.
+3. Set `SMS_DRY_RUN=false`, `SMS_SEND_ENABLED=true`, a conservative positive `SMS_ESTIMATED_UNIT_COST` **per SMS segment**, and positive `SMS_MAX_ESTIMATED_COST` in the same currency.
+4. Run `python main.py` to preview the aggregate preflight. Without `--live`, even live-configured environments remain simulations.
+5. Only after review, supply `--live --campaign-id <stable-id> --confirm-campaign <same-id>`. Both environment switches and matching CLI confirmation are required. If Dry Run is true, `--live` is refused.
 
-```csv
-first_name_per,selected_phone
-Example User,09XXXXXXXXX
-```
+A live run prints its current preflight before making requests. Do not use a new ID to bypass an uncertain or rejected campaign. IDs must contain 1–64 ASCII letters, digits, hyphens or underscores.
 
-Column names are configurable using `SMS_FIRST_NAME_COLUMN` and `SMS_PHONE_COLUMN`.
+### Operational bounds and estimates
 
-Real recipient datasets should never be committed to the repository.
+| Setting | Default / boundary |
+|---|---|
+| `SMS_MAX_RECIPIENTS` | 100 eligible unique recipients; allowed 1–1000 |
+| `SMS_DELAY_BETWEEN_SMS` | 2 seconds; allowed 1–3600, sequential requests only |
+| `SMS_REQUEST_TIMEOUT` | 10 seconds; allowed 1–60 |
+| `SMS_ESTIMATED_UNIT_COST` | 0; positive conservative per-segment estimate required live |
+| `SMS_MAX_ESTIMATED_COST` | 0; positive estimate cap required live |
+| `SMS_MANIFEST_DIR` | `campaign-state` |
 
-## Configuration reference
+Costs use a conservative Unicode segmentation assumption: 70 UTF-16 units for a single segment, 67 per multipart segment, even for Latin messages. Supplementary characters count as two units. Actual provider/carrier segmentation, encoding, tariffs, taxes and charges may differ. The cap bounds this **estimate**, not a verified financial guarantee; configure provider-side spending restrictions too.
 
-| Environment variable | Purpose | Default |
-|---|---|---|
-| `SMS_DRY_RUN` | Full validation/simulation with no gateway request | `false` in code; `true` in `.env.example` |
-| `SMS_SEND_ENABLED` | Explicit live-send safety switch | `false` |
-| `SMS_SERVER_ADDRESS` | Provider base URL | provider-specific default in code |
-| `SMS_API_ENDPOINT` | Override provider message endpoint | derived from base URL |
-| `SMS_USERNAME` | Gateway username | required for live mode |
-| `SMS_PASSWORD` | Gateway password | required for live mode |
-| `SMS_CSV_FILE_PATH` | Campaign CSV path | `data/contacts.csv` |
-| `SMS_FIRST_NAME_COLUMN` | Recipient-name column | `first_name_per` |
-| `SMS_PHONE_COLUMN` | Recipient-phone column | `selected_phone` |
-| `SMS_MESSAGE_TEMPLATE` | Message template with `{name}` support | generic sample |
-| `SMS_REQUEST_TIMEOUT` | Gateway request timeout | `10` seconds |
-| `SMS_DELAY_BETWEEN_SMS` | Delay between live submissions | `2` seconds |
-| `SMS_LOG_LEVEL` | Logging level | `INFO` |
-| `SMS_LOG_FILE` | Log output path | `logs/sms_campaign.log` |
+A campaign whose `recipients × (delay + timeout)` estimate exceeds one hour is refused. This is not a hard wall-clock deadline: Requests timeouts are socket inactivity bounds. No parallelism, automatic retries, rate-limit bypass, scheduling or unattended sending is implemented.
 
-### Safety precedence
+## Safe reruns and local journal
 
-If both values are accidentally enabled:
+`manifest.py` writes a private JSON journal **before** each HTTP request, under an exclusive campaign lock. It stores status and salted opaque number references, not names, full numbers or message bodies. Files are created with restrictive permissions where supported; use a private directory on a local filesystem. References remain pseudonymous personal data, not anonymized information.
 
-```dotenv
-SMS_DRY_RUN=true
-SMS_SEND_ENABLED=true
-```
+Reuse the same ID and directory for the same campaign. Accepted recipients are skipped. A pending/unknown or rejected prior result blocks remaining submissions until the operator reconciles it with the provider; there is no automatic override or resend. An interruption between completed requests can resume only untouched recipients. A changed eligible recipient/message plan, endpoint or consent scope refuses reuse of the ID. Updating exclusions can change that plan: stop and reconcile rather than bypassing the refusal with a fresh ID.
 
-**Dry Run takes precedence and no gateway request is sent.**
+A stale `.lock` intentionally blocks execution. Remove it only after independently confirming no process is running and reconciling pending outcomes. Do not delete/edit journals to force a rerun. Losing the journal, changing IDs/directories, using separate hosts or copying state cannot provide global duplicate protection. Exactly-once delivery is **not** promised.
 
-## Tests and CI
+## Gateway contract and outcomes
 
-Run locally:
+Verified against the official [sending guide](https://docs.sms-gate.app/features/sending-messages/), [API specification](https://capcom6.github.io/android-sms-gateway/) and [authentication guide](https://docs.sms-gate.app/integration/authentication/).
+
+- Default: `POST https://api.sms-gate.app/3rdparty/v1/messages`, Basic authentication, `textMessage.text`, one E.164 `phoneNumbers` entry and `ttl=3600`. The old `message` field is deprecated; the old singular route is not assumed supported.
+- Override with `SMS_SERVER_ADDRESS` or `SMS_API_ENDPOINT` for a trusted compatible deployment. Live endpoints must use HTTPS, without URL credentials, query parameters or fragments. Plain HTTP local gateways require a trusted TLS proxy; redirects are not followed. Local mode uses the device directly; cloud mode queues via the server. Both require operator verification of the deployed API version.
+- Documented enqueue response is HTTP 202. Compatible 200/201 responses are accepted only with a nonempty string `id` and a recognized positive state (`Pending`, `Processed`, `Sent`, `Delivered`). `Failed`/`Cancelled` mean rejected. Unexpected schemas/states are unknown. Provider identifiers and response bodies are never logged or retained.
+- 400/404/405/413/422: invalid request; 401/403: authentication; 429: throttling. These stop the run. Other HTTP errors, 5xx/queue unavailability, malformed acknowledgements and transport errors are conservatively unknown and stop the run. No blind retry is attempted.
+
+A gateway may accept a message before a timeout or a local disk failure. The journal then preserves a pending/unknown claim. This is not proof of rejection or delivery. There is no receipt polling or carrier delivery-rate calculation. Gateway-side queues and carrier restrictions must still be respected.
+
+## Results and exit codes
+
+Counters separate input records, valid rows, eligible unique recipients, duplicate rows, exclusions, missing consent, prior journal outcomes, simulations, accepted/rejected/unknown attempts and unattempted recipients after a stop. Duplicate rows are counted separately; exclusion and consent counters refer to unique valid numbers. Validation failures are **not** gateway attempts.
+
+API acceptance percentage = current-run accepted ÷ (accepted + rejected + unknown), or 0 with no attempts. It excludes previews, validation failures and previous runs.
+
+| Exit | Meaning |
+|---|---|
+| 0 | Successful preview or permitted submissions; deliberate exclusions are reported, not errors |
+| 2 | Invalid configuration/input or authorization; no live submission starts after failed preflight |
+| 3 | Accepted and rejected results, including retained journal results |
+| 4 | Rejected results with no accepted results |
+| 5 | Unknown result, interruption or operational failure; reconcile before rerunning |
+
+Unknown outcomes take precedence. Failure diagnostics are fixed, redacted classifications; stdout contains JSON events without recipient data. Argparse usage errors also use exit 2.
+
+## Privacy and security
+
+Routine diagnostics contain aggregate counts and fixed classifications only: no names, numbers, message bodies, credentials, endpoint URLs or provider bodies. Logging is console-only; old `SMS_LOG_FILE`/`SMS_LOG_LEVEL` settings no longer enable file/debug output. Protect any shell-captured output yourself.
+
+Keep `.env`, lists, evidence and journals private. Default local state, contact files and reports are ignored by Git and Docker. Custom state directories must also be kept outside the build context. Retain journals while retries/reconciliation remain possible; archive securely under your retention policy, and delete them only after the campaign is permanently retired. Deleting state removes rerun protection. Retain the minimum authorized suppression data needed to honor withdrawals; removing it carelessly can permit recontact. Deletion from backups and secure storage are operator responsibilities.
+
+See [SECURITY.md](SECURITY.md). No privacy-law or production-delivery certification is claimed.
+
+## Tests, CI and Docker
 
 ```bash
 python -m unittest discover -s tests -v
+python -m pip install coverage ruff pip-audit
+coverage run --source=main,campaign,config,manifest,sms_service,utils -m unittest discover -s tests
+coverage report --show-missing --fail-under=80
+ruff check --select E9,F63,F7,F82 .
+python -m pip_audit -r requirements.txt
 ```
 
-Tests cover mobile-number normalization, invalid/non-mobile rejection, privacy-safe masking, campaign processing, API acceptance aggregation, missing-phone handling, Dry Run simulation, Dry Run validation failures, runtime send-safety configuration, and protection against recipient data leaking through unexpected exception logs.
-
-GitHub Actions runs automatically on pushes and pull requests to `master`, checking dependency installation, Python compilation, dependency consistency, unit tests on **Python 3.10 through 3.14**, a runtime-dependency vulnerability audit with `pip-audit`, and Docker image buildability.
-
-## Docker
-
-Build:
+CI checks Python 3.10–3.14, static correctness, measured coverage including `main.py`, dependencies, tracked dataset hygiene and a non-root Docker Dry Run with networking disabled. Unit tests use synthetic recipients and mocked HTTP; no gateway credentials are supplied.
 
 ```bash
 docker build -t batch-sms-campaign-automation .
-```
-
-The image runs the application as a dedicated non-root `app` user.
-
-Run safely with the example Dry Run configuration:
-
-```bash
-docker run --rm \
-  --env-file .env \
-  -v "$PWD/examples:/app/examples:ro" \
-  -v "$PWD/logs:/app/logs" \
+docker run --rm --network none \
+  -e SMS_CSV_FILE_PATH=/tmp/contacts.csv \
+  -v "$PWD/examples/contacts.example.csv:/tmp/contacts.csv:ro" \
   batch-sms-campaign-automation
 ```
 
-For live operation, mount private campaign data rather than baking it into the image.
+No environment file or credentials are needed for this demonstration. Live containers require separately authorized execution and durable private state/data mounts with appropriate non-root permissions; an ephemeral container alone cannot preserve rerun protection.
 
-## Operational safeguards
+## Structure and limits
 
-- **Credentials:** secrets are environment-backed and `.env` is excluded from version control.
-- **Recipient privacy:** contact datasets and generated logs are excluded from source control; routine logs mask phone numbers and unexpected row-processing errors omit exception details.
-- **Safe simulation:** Dry Run validates the campaign without network submission and does not require provider credentials.
-- **Explicit live opt-in:** live sending requires both `SMS_DRY_RUN=false` and `SMS_SEND_ENABLED=true`.
-- **Failure isolation:** one malformed record does not terminate the remaining campaign.
-- **Dependency monitoring:** CI audits runtime dependencies for known vulnerabilities.
-- **Container least privilege:** the Docker image runs as a non-root application user.
-- **Credential rotation:** any credential ever exposed publicly or committed to Git history must be revoked or rotated.
-
-See [SECURITY.md](SECURITY.md) for vulnerability-reporting and operational-security guidance.
-
-## Current scope and limitations
-
-The public snapshot intentionally remains a focused campaign automation application:
-
-- sequential single-process execution
-- CSV input
-- configurable request delay rather than a distributed rate limiter
-- no automatic retry queue/backoff workflow
-- no resumable campaign checkpointing
-- no scheduling layer
-- no opt-out management
-- no multi-provider routing
-- no delivery-receipt polling
-- no campaign dashboard
-- no final delivery analytics
-
-These are potential product extensions, not capabilities claimed by the current implementation.
-
-## Why this project matters
-
-The value is not simply calling an SMS API. The repository demonstrates how a repetitive operational task can be translated into a small productized application with explicit safety and product boundaries:
-
-**structured input → validation → personalization → safe simulation → controlled execution → observability → explicit delivery semantics**
-
-## Portfolio
-
-For broader project context and other product/data work, see **[alirezabelal.github.io](https://alirezabelal.github.io/)**.
+`main.py` composes strict `config.py`, bounded `campaign.py`, the local `manifest.py` journal and `sms_service/sms_sender.py`; `utils/` contains normalization and logging. No CRM, database, queue framework, scheduling, inbound opt-out responder or multi-provider broker is added. Public source and examples are MIT licensed.

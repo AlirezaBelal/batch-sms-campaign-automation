@@ -1,135 +1,246 @@
-"""Campaign orchestration for controlled batch SMS submission."""
+"""Bounded preflight, consent filtering and sequential campaign submission."""
 
 import csv
-import logging
-import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
+from decimal import Decimal
+import hashlib
+import json
+import math
 from pathlib import Path
-from typing import Protocol, Tuple
+import time
 
-logger = logging.getLogger(__name__)
-
-
-class MessageGateway(Protocol):
-    """Minimal interface required by the campaign runner."""
-
-    def render_message(self, recipient_name: str) -> str:
-        ...
-
-    def validate_recipient(self, phone_number: str) -> str:
-        ...
-
-    def submit_message(self, phone_number: str, message: str) -> Tuple[bool, object]:
-        ...
+from manifest import CampaignManifest
+from sms_service.sms_sender import Submission
 
 
 @dataclass
 class CampaignResult:
-    """Aggregate outcome for one campaign run."""
-
-    accepted_or_queued: int = 0
+    total_input: int = 0
+    valid_records: int = 0
+    invalid_records: int = 0
+    eligible_recipients: int = 0
+    skipped_duplicates: int = 0
+    skipped_without_consent: int = 0
+    skipped_excluded: int = 0
+    skipped_previous: int = 0
+    previous_accepted: int = 0
+    previous_rejected: int = 0
+    previous_unknown: int = 0
     simulated: int = 0
-    failed: int = 0
+    accepted_or_queued: int = 0
+    rejected: int = 0
+    unknown: int = 0
+    not_attempted: int = 0
+    estimated_segments: int = 0
+    estimated_cost: str = "0"
 
     @property
-    def total_processed(self) -> int:
-        return self.accepted_or_queued + self.simulated + self.failed
+    def api_acceptance_rate(self):
+        attempted = self.accepted_or_queued + self.rejected + self.unknown
+        return 100 * self.accepted_or_queued / attempted if attempted else 0.0
 
-    @property
-    def api_acceptance_rate(self) -> float:
-        attempted = self.accepted_or_queued + self.failed
-        if attempted == 0:
-            return 0.0
-        return (self.accepted_or_queued / attempted) * 100
+    def summary(self):
+        return {
+            **asdict(self),
+            "api_acceptance_rate": round(self.api_acceptance_rate, 2),
+        }
+
+
+def _csv_rows(path, required):
+    """Read only bounded UTF-8 CSVs, rejecting schema and row-shape ambiguity."""
+    try:
+        path = Path(path)
+        if path.stat().st_size > 5 * 1024 * 1024:
+            raise ValueError("CSV exceeds the 5 MiB input limit")
+        with path.open(encoding="utf-8-sig", newline="") as stream:
+            reader = csv.DictReader(stream, strict=True)
+            fields = reader.fieldnames
+            if (
+                not fields
+                or len(fields) != len(set(fields))
+                or not required.issubset(fields)
+            ):
+                raise ValueError("CSV is empty or has invalid/missing headers")
+            rows = []
+            for row in reader:
+                if None in row or any(v is None for v in row.values()):
+                    raise ValueError("CSV contains an inconsistent row shape")
+                rows.append(row)
+                if len(rows) > 10000:
+                    raise ValueError("CSV exceeds the 10000-record input limit")
+            if not rows and required != {"phone"}:
+                raise ValueError("Campaign CSV has no records")
+            return rows
+    except (OSError, UnicodeError, csv.Error):
+        raise ValueError("Unable to read a valid UTF-8 CSV; details omitted") from None
+
+
+def _consented(row, scope):
+    if not scope or row.get("consent_status", "").strip() != "granted":
+        return False
+    if row.get("consent_scope", "").strip() != scope:
+        return False
+    if not 1 <= len(row.get("consent_source", "").strip()) <= 128:
+        return False
+    try:
+        recorded = datetime.fromisoformat(
+            row.get("consent_at", "").strip().replace("Z", "+00:00")
+        )
+        return recorded.tzinfo is not None and recorded <= datetime.now(timezone.utc)
+    except ValueError:
+        return False
 
 
 class CampaignRunner:
-    """Process a contact CSV and execute live or simulated message submissions."""
-
-    def __init__(
-        self,
-        gateway: MessageGateway,
-        input_file: str,
-        recipient_name_column: str,
-        recipient_phone_column: str,
-        request_delay_seconds: float = 0,
-        dry_run: bool = False,
-    ) -> None:
+    def __init__(self, gateway, settings):
         self.gateway = gateway
-        self.input_file = Path(input_file)
-        self.recipient_name_column = recipient_name_column
-        self.recipient_phone_column = recipient_phone_column
-        self.request_delay_seconds = max(0.0, request_delay_seconds)
-        self.dry_run = dry_run
+        self.settings = settings
+        self.result = CampaignResult()
+        self.recipients = []
+        self.binding = ""
 
-    def run(self) -> CampaignResult:
-        """Execute one campaign run and return aggregate processing counts."""
+    def prepare(self):
+        """Complete all validation and render messages before any submission."""
+        self.settings.validate()
         result = CampaignResult()
-
-        if not self.input_file.exists():
-            logger.error("Campaign input file not found: %s", self.input_file)
-            return result
-
-        try:
-            with self.input_file.open("r", encoding="utf-8", newline="") as contact_file:
-                reader = csv.DictReader(contact_file)
-                if not self._has_required_columns(reader.fieldnames):
-                    return result
-
-                for row_number, row in enumerate(reader, start=2):
-                    self._process_row(row_number, row, result)
-        except OSError as exc:
-            logger.error("Unable to read campaign input file %s: %s", self.input_file, exc)
-
+        exclusions = set()
+        if self.settings.exclusions_file:
+            for row in _csv_rows(self.settings.exclusions_file, {"phone"}):
+                try:
+                    exclusions.add(
+                        self.gateway.validate_recipient(row["phone"].strip())
+                    )
+                except ValueError:
+                    raise ValueError(
+                        "Exclusion CSV contains an invalid phone number"
+                    ) from None
+        rows = _csv_rows(
+            self.settings.input_file,
+            {self.settings.name_column, self.settings.phone_column},
+        )
+        result.total_input = len(rows)
+        unique = {}
+        for row in rows:
+            try:
+                phone = self.gateway.validate_recipient(
+                    row[self.settings.phone_column].strip()
+                )
+                message = self.gateway.render_message(
+                    row[self.settings.name_column].strip()
+                )
+            except Exception:
+                # Never echo names, numbers, templates or provider exception details.
+                result.invalid_records += 1
+                continue
+            result.valid_records += 1
+            eligible = _consented(row, self.settings.consent_scope)
+            if phone in unique:
+                result.skipped_duplicates += 1
+                # A contradictory consent row denies permission for the entire number.
+                unique[phone][1] = unique[phone][1] and eligible
+            else:
+                unique[phone] = [message, eligible]
+        recipients = []
+        for phone, (message, eligible) in unique.items():
+            if phone in exclusions:
+                result.skipped_excluded += 1
+            elif not eligible:
+                result.skipped_without_consent += 1
+            else:
+                recipients.append((phone, message))
+        result.eligible_recipients = len(recipients)
+        if len(recipients) > self.settings.max_recipients:
+            raise ValueError("Eligible recipients exceed SMS_MAX_RECIPIENTS")
+        # Conservative UCS-2/UTF-16 segment estimate, even for basic Latin text.
+        for _, message in recipients:
+            units = len(message.encode("utf-16-be")) // 2
+            result.estimated_segments += 1 if units <= 70 else math.ceil(units / 67)
+        result.estimated_cost = str(
+            Decimal(result.estimated_segments) * self.settings.unit_cost
+        )
+        self.result, self.recipients = result, recipients
+        self.binding = hashlib.sha256(
+            json.dumps(
+                [
+                    self.settings.endpoint,
+                    self.settings.consent_scope,
+                    sorted(recipients),
+                ],
+                ensure_ascii=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
         return result
 
-    def _has_required_columns(self, fieldnames) -> bool:
-        if not fieldnames:
-            logger.error("Campaign input file is empty: %s", self.input_file)
-            return False
-
-        required = {self.recipient_name_column, self.recipient_phone_column}
-        missing = required.difference(fieldnames)
-        if missing:
-            logger.error("Missing required CSV columns: %s", ", ".join(sorted(missing)))
-            return False
-
-        return True
-
-    def _process_row(self, row_number: int, row: dict, result: CampaignResult) -> None:
-        try:
-            recipient_name = (row.get(self.recipient_name_column) or "").strip()
-            phone_number = (row.get(self.recipient_phone_column) or "").strip()
-
-            if not phone_number:
-                logger.warning("Row %s has no phone number; skipping", row_number)
-                result.failed += 1
-                return
-
-            message = self.gateway.render_message(recipient_name)
-
-            if self.dry_run:
-                self.gateway.validate_recipient(phone_number)
-                result.simulated += 1
-                logger.info(
-                    "DRY RUN: row %s validated; no gateway request was sent",
-                    row_number,
-                )
-                return
-
-            accepted_by_api, _ = self.gateway.submit_message(phone_number, message)
-
-            if accepted_by_api:
-                result.accepted_or_queued += 1
-            else:
-                result.failed += 1
-
-            if self.request_delay_seconds:
-                time.sleep(self.request_delay_seconds)
-        except Exception as exc:
-            logger.error(
-                "Failed to process row %s due to %s; exception details omitted to protect recipient data",
-                row_number,
-                type(exc).__name__,
+    def run(self, *, live=False, campaign_id="", confirm_campaign="", preflight=None):
+        result = self.prepare()
+        if preflight is not None:
+            preflight(result.summary())
+        if not live:
+            result.simulated = len(self.recipients)
+            return result
+        self.settings.validate(live=True)
+        if not campaign_id or confirm_campaign != campaign_id:
+            raise ValueError(
+                "Live execution requires matching --campaign-id and --confirm-campaign"
             )
-            result.failed += 1
+        if Path(self.settings.input_file).name == "contacts.example.csv":
+            raise ValueError(
+                "The bundled example must never be used for live execution"
+            )
+        if result.invalid_records:
+            raise ValueError("Live execution refuses invalid input records")
+        if not self.recipients:
+            raise ValueError("No eligible recipients; nothing may be submitted")
+        if Decimal(result.estimated_cost) > self.settings.max_cost:
+            raise ValueError(
+                "Conservative cost estimate exceeds SMS_MAX_ESTIMATED_COST"
+            )
+        if len(self.recipients) * (self.settings.delay + self.settings.timeout) > 3600:
+            raise ValueError("Campaign exceeds the conservative one-hour runtime bound")
+        with CampaignManifest(
+            self.settings.manifest_dir, campaign_id, self.binding
+        ) as journal:
+            pending = []
+            for phone, message in self.recipients:
+                previous = journal.status(phone)
+                if previous:
+                    result.skipped_previous += 1
+                    if previous == "accepted":
+                        result.previous_accepted += 1
+                    elif previous == "rejected":
+                        result.previous_rejected += 1
+                    else:
+                        result.previous_unknown += 1
+                else:
+                    pending.append((phone, message))
+            if result.previous_unknown or result.previous_rejected:
+                result.not_attempted = len(pending)
+                return result
+            for index, (phone, message) in enumerate(pending):
+                # If the process dies after this fsync, the outcome remains conservatively unknown.
+                journal.record(phone, "pending")
+                try:
+                    outcome = self.gateway.submit_message(phone, message)
+                    if not isinstance(outcome, Submission) or outcome.status not in {
+                        "accepted",
+                        "rejected",
+                        "unknown",
+                    }:
+                        outcome = Submission("unknown", "invalid_gateway_result", True)
+                except Exception:
+                    outcome = Submission("unknown", "unexpected_gateway_error", True)
+                journal.record(phone, outcome.status)
+                if outcome.status == "accepted":
+                    result.accepted_or_queued += 1
+                elif outcome.status == "rejected":
+                    result.rejected += 1
+                else:
+                    result.unknown += 1
+                if outcome.stop or outcome.status != "accepted":
+                    result.not_attempted = len(pending) - index - 1
+                    break
+                if index < len(pending) - 1:
+                    time.sleep(self.settings.delay)
+        return result

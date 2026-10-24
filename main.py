@@ -1,111 +1,135 @@
-"""Command-line entry point for Batch SMS Campaign Automation."""
+"""Safe-by-default CLI with explicit live authorization and aggregate JSON output."""
 
+import argparse
+import json
 import logging
+import sys
 
 from campaign import CampaignRunner
-from config import (
-    CAMPAIGN_INPUT_FILE,
-    DRY_RUN_ENABLED,
-    GATEWAY_MESSAGE_ENDPOINT,
-    GATEWAY_PASSWORD,
-    GATEWAY_USERNAME,
-    MESSAGE_TEMPLATE,
-    RECIPIENT_NAME_COLUMN,
-    RECIPIENT_PHONE_COLUMN,
-    REQUEST_DELAY_SECONDS,
-    REQUEST_TIMEOUT_SECONDS,
-    SEND_ENABLED,
-)
+from config import load_settings
 from sms_service import SMSGatewayClient
 from utils.logger import configure_logging
 
 logger = logging.getLogger(__name__)
 
 
-def validate_runtime_config() -> bool:
-    """Validate safety-critical configuration before campaign execution."""
-    if DRY_RUN_ENABLED:
-        if SEND_ENABLED:
-            logger.warning(
-                "SMS_DRY_RUN=true takes precedence over SMS_SEND_ENABLED=true; "
-                "no gateway requests will be sent."
-            )
-        return True
-
-    missing_variables = []
-
-    if not GATEWAY_USERNAME:
-        missing_variables.append("SMS_USERNAME")
-    if not GATEWAY_PASSWORD:
-        missing_variables.append("SMS_PASSWORD")
-
-    if missing_variables:
-        logger.error(
-            "Missing required environment variables: %s",
-            ", ".join(missing_variables),
-        )
-        return False
-
-    if not SEND_ENABLED:
-        logger.warning(
-            "Outbound sending is disabled. Use SMS_DRY_RUN=true for a safe full "
-            "campaign simulation, or set SMS_SEND_ENABLED=true only after reviewing "
-            "credentials, campaign data, message content and request pacing."
-        )
-        return False
-
-    return True
+def result_exit_code(result):
+    if result.unknown or result.previous_unknown:
+        return 5
+    if result.rejected or result.previous_rejected:
+        return 3 if result.accepted_or_queued or result.previous_accepted else 4
+    if result.invalid_records:
+        return 2
+    return 0
 
 
-def main() -> None:
-    """Initialize application components and execute one campaign run."""
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Preview a consent-based SMS campaign; no network by default"
+    )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="Request live execution (also requires both environment switches)",
+    )
+    parser.add_argument(
+        "--campaign-id",
+        default="",
+        help="Stable ID; reuse it when resuming the same campaign",
+    )
+    parser.add_argument(
+        "--confirm-campaign",
+        default="",
+        help="Repeat the reviewed campaign ID to authorize live submission",
+    )
+    args = parser.parse_args(argv)
     configure_logging()
-    logger.info("Starting SMS campaign automation")
-
-    if not validate_runtime_config():
-        return
-
-    gateway_client = SMSGatewayClient(
-        endpoint=GATEWAY_MESSAGE_ENDPOINT,
-        username=GATEWAY_USERNAME,
-        password=GATEWAY_PASSWORD,
-        message_template=MESSAGE_TEMPLATE,
-        timeout_seconds=REQUEST_TIMEOUT_SECONDS,
-    )
-
-    campaign = CampaignRunner(
-        gateway=gateway_client,
-        input_file=CAMPAIGN_INPUT_FILE,
-        recipient_name_column=RECIPIENT_NAME_COLUMN,
-        recipient_phone_column=RECIPIENT_PHONE_COLUMN,
-        request_delay_seconds=REQUEST_DELAY_SECONDS,
-        dry_run=DRY_RUN_ENABLED,
-    )
-
-    result = campaign.run()
-
-    if DRY_RUN_ENABLED:
-        logger.info(
-            "Dry run completed. Total processed: %s, Simulated: %s, Failed validation: %s",
-            result.total_processed,
-            result.simulated,
-            result.failed,
+    try:
+        settings = load_settings()
+        settings.validate(live=args.live)
+        gateway = SMSGatewayClient(
+            settings.endpoint,
+            settings.username,
+            settings.password,
+            settings.template,
+            settings.timeout,
+            live_authorized=args.live,
         )
-        return
-
-    logger.info(
-        "Campaign run completed. Total processed: %s, API accepted/queued: %s, Failed: %s",
-        result.total_processed,
-        result.accepted_or_queued,
-        result.failed,
-    )
-
-    if result.total_processed:
-        logger.info(
-            "API acceptance/queue rate: %.2f%% (not a carrier delivery rate)",
-            result.api_acceptance_rate,
+        runner = CampaignRunner(gateway, settings)
+        try:
+            result = runner.run(
+                live=args.live,
+                campaign_id=args.campaign_id,
+                confirm_campaign=args.confirm_campaign,
+                preflight=lambda data: print(
+                    json.dumps(
+                        {
+                            "event": "preflight",
+                            "mode": "live" if args.live else "dry_run",
+                            **data,
+                        }
+                    ),
+                    flush=True,
+                ),
+            )
+        finally:
+            gateway.session.close()
+        code = result_exit_code(result)
+        print(
+            json.dumps(
+                {
+                    "event": "summary",
+                    "mode": "live" if args.live else "dry_run",
+                    "exit_code": code,
+                    **result.summary(),
+                }
+            ),
+            flush=True,
         )
+        return code
+    except ValueError:
+        logger.error(
+            "Invalid configuration or input; consult the documented schema and safety requirements"
+        )
+        print(
+            json.dumps(
+                {
+                    "event": "error",
+                    "classification": "invalid_configuration_or_input",
+                    "exit_code": 2,
+                }
+            )
+        )
+        return 2
+    except KeyboardInterrupt:
+        logger.error(
+            "Interrupted; reconcile the journal before any further live execution"
+        )
+        print(
+            json.dumps(
+                {
+                    "event": "error",
+                    "classification": "interrupted_unknown",
+                    "exit_code": 5,
+                }
+            )
+        )
+        return 5
+    except Exception:
+        logger.error(
+            "Operational failure; reconcile the journal before any further live execution"
+        )
+        print(
+            json.dumps(
+                {
+                    "event": "error",
+                    "classification": "operational_unknown",
+                    "exit_code": 5,
+                }
+            )
+        )
+        return 5
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
