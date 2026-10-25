@@ -7,7 +7,7 @@ _DIGIT_TRANSLATION = str.maketrans(
     "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩",
     "01234567890123456789",
 )
-_ALLOWED_PHONE_CHARACTERS = re.compile(r"^[0-9+\s().-]+$")
+_ALLOWED_PHONE_CHARACTERS = re.compile(r"[0-9+ ().-]+")
 
 
 def normalize_iranian_mobile(phone_number: object) -> str:
@@ -19,9 +19,16 @@ def normalize_iranian_mobile(phone_number: object) -> str:
     embedded text and malformed plus signs raise ``ValueError`` instead of
     being silently removed.
     """
-    raw_value = str(phone_number).strip().translate(_DIGIT_TRANSLATION)
-
-    if not raw_value or not _ALLOWED_PHONE_CHARACTERS.fullmatch(raw_value):
+    raw_value = str(phone_number).translate(_DIGIT_TRANSLATION)
+    # Do not trim control characters before validation: a quoted CSV cell
+    # containing a newline/tab must never become an apparently valid number.
+    if (
+        len(raw_value) > 64
+        or not _ALLOWED_PHONE_CHARACTERS.fullmatch(raw_value)
+    ):
+        raise ValueError("Invalid Iranian mobile number")
+    raw_value = raw_value.strip()
+    if not raw_value:
         raise ValueError("Invalid Iranian mobile number")
 
     if raw_value.count("+") > 1 or ("+" in raw_value and not raw_value.startswith("+")):

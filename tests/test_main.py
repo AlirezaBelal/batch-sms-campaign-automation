@@ -185,6 +185,13 @@ class RuntimeConfigurationTests(unittest.TestCase):
                     self.assertEqual(main.main([]), 5)
                 self.assertNotIn("sensitive-file-path", str(logs.output))
 
+    def test_changed_exclusion_snapshot_is_an_operational_stop(self):
+        from campaign import CampaignResult
+        from main import result_exit_code
+
+        result = CampaignResult(accepted_or_queued=1, exclusion_file_changed=True)
+        self.assertEqual(result_exit_code(result), 5)
+
     def test_exit_code_semantics(self):
         for result, expected in [
             (CampaignResult(), 0),

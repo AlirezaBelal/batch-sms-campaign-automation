@@ -25,7 +25,7 @@ Please report issues involving:
 
 ## Operational safety
 
-This repository is a portfolio snapshot of a campaign-submission workflow, not a managed messaging service. Operators are responsible for securing deployment credentials, campaign data, and the host environment.
+This repository provides an operator-controlled campaign-submission CLI, not a managed or compliance-certified messaging service. Operators are responsible for securing deployment credentials, campaign data, and the host environment.
 
 The provided `.env.example` starts in Dry Run mode and disables live sending. Real credentials and recipient datasets must remain outside source control. Any credential that is accidentally exposed in a public repository or log should be revoked or rotated immediately.
 
@@ -36,6 +36,12 @@ failed preflight must prevent submission. Consent metadata is an operator assert
 not independent legal evidence. Do not use purchased, scraped or unverified lists.
 Operators must verify current jurisdiction, carrier and provider requirements and
 maintain an authorized opt-out list; this application does not process inbound SMS.
+A changed or unreadable suppression file is detected before each HTTP submission
+by comparing a bounded file digest with the preflight snapshot, then the run stops.
+This is not an atomic provider opt-out check; withdrawals must be ingested promptly
+by the operator and a small check-to-send race remains. Never treat the unchanged
+file as evidence of current consent. Embedded phone field control characters and
+oversized values are rejected, not normalized into a plausible number.
 
 Treat the local journal as sensitive pseudonymous data. Keep it on a private local
 filesystem with restrictive permissions and backups protected under a retention

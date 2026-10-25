@@ -27,6 +27,7 @@ class CampaignResult:
     previous_accepted: int = 0
     previous_rejected: int = 0
     previous_unknown: int = 0
+    exclusion_file_changed: bool = False
     simulated: int = 0
     accepted_or_queued: int = 0
     rejected: int = 0
@@ -76,6 +77,25 @@ def _csv_rows(path, required):
         raise ValueError("Unable to read a valid UTF-8 CSV; details omitted") from None
 
 
+def _exclusion_digest(path):
+    """Hash the bounded suppression file without retaining its contents in memory."""
+    digest = hashlib.sha256()
+    try:
+        with Path(path).open("rb") as stream:
+            seen = 0
+            while True:
+                chunk = stream.read(65536)
+                if not chunk:
+                    break
+                seen += len(chunk)
+                if seen > 5 * 1024 * 1024:
+                    raise ValueError("Exclusion CSV exceeds the input size limit")
+                digest.update(chunk)
+    except OSError:
+        raise ValueError("Unable to verify exclusion CSV") from None
+    return digest.digest()
+
+
 def _consented(row, scope):
     if not scope or row.get("consent_status", "").strip() != "granted":
         return False
@@ -99,6 +119,7 @@ class CampaignRunner:
         self.result = CampaignResult()
         self.recipients = []
         self.binding = ""
+        self.exclusion_digest = None
 
     def prepare(self):
         """Complete all validation and render messages before any submission."""
@@ -106,6 +127,7 @@ class CampaignRunner:
         result = CampaignResult()
         exclusions = set()
         if self.settings.exclusions_file:
+            self.exclusion_digest = _exclusion_digest(self.settings.exclusions_file)
             for row in _csv_rows(self.settings.exclusions_file, {"phone"}):
                 try:
                     exclusions.add(
@@ -115,6 +137,8 @@ class CampaignRunner:
                     raise ValueError(
                         "Exclusion CSV contains an invalid phone number"
                     ) from None
+            if _exclusion_digest(self.settings.exclusions_file) != self.exclusion_digest:
+                raise ValueError("Exclusion CSV changed during preflight")
         rows = _csv_rows(
             self.settings.input_file,
             {self.settings.name_column, self.settings.phone_column},
@@ -219,6 +243,20 @@ class CampaignRunner:
                 result.not_attempted = len(pending)
                 return result
             for index, (phone, message) in enumerate(pending):
+                # Withdrawals recorded while the campaign is running must stop
+                # further submissions. This is a file-snapshot guard, not an
+                # inbound STOP service or a guarantee against every race.
+                try:
+                    unchanged = (
+                        _exclusion_digest(self.settings.exclusions_file)
+                        == self.exclusion_digest
+                    )
+                except ValueError:
+                    unchanged = False
+                if not unchanged:
+                    result.exclusion_file_changed = True
+                    result.not_attempted = len(pending) - index
+                    break
                 # If the process dies after this fsync, the outcome remains conservatively unknown.
                 journal.record(phone, "pending")
                 try:
