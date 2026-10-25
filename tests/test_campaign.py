@@ -144,6 +144,62 @@ class CampaignRunnerTests(unittest.TestCase):
             self.run_campaign(live=True)
         self.gateway.submit_message.assert_not_called()
 
+    def test_exclusions_changed_mid_campaign_stop_without_sending_remaining(self):
+        self.csv.write_text(
+            HEADER + ROW + ROW.replace("09000000000", "09000000001")
+        )
+
+        def submit(phone, message):
+            # A synthetic withdrawal recorded between two requests.
+            self.exclusions.write_text("phone\n09000000001\n", encoding="utf-8")
+            return Submission("accepted", "acknowledged")
+
+        self.gateway.submit_message.side_effect = submit
+        with patch("campaign.time.sleep"):
+            result = self.run_campaign(live=True)
+        self.assertEqual(result.accepted_or_queued, 1)
+        self.assertTrue(result.exclusion_file_changed)
+        self.assertEqual(result.not_attempted, 1)
+        self.assertEqual(self.gateway.submit_message.call_count, 1)
+        self.assertEqual(
+            result.summary()["exclusion_file_changed"], True
+        )
+
+    def test_exclusion_file_unreadable_during_run_stops_new_submissions(self):
+        self.csv.write_text(
+            HEADER + ROW + ROW.replace("09000000000", "09000000001")
+        )
+
+        def submit(phone, message):
+            self.exclusions.unlink()
+            return Submission("accepted", "acknowledged")
+
+        self.gateway.submit_message.side_effect = submit
+        with patch("campaign.time.sleep"):
+            result = self.run_campaign(live=True)
+        self.assertEqual(
+            (result.accepted_or_queued, result.not_attempted), (1, 1)
+        )
+        self.assertTrue(result.exclusion_file_changed)
+        self.assertEqual(self.gateway.submit_message.call_count, 1)
+
+    def test_exclusions_modified_during_preflight_fail_closed(self):
+        from campaign import _exclusion_digest
+
+        original = _exclusion_digest
+        observed = []
+
+        def digest_with_change(path):
+            observed.append(True)
+            if len(observed) == 2:
+                self.exclusions.write_text("phone\n09000000000\n")
+            return original(path)
+
+        with patch("campaign._exclusion_digest", side_effect=digest_with_change):
+            with self.assertRaisesRegex(ValueError, "changed during preflight"):
+                self.run_campaign(live=True)
+        self.gateway.submit_message.assert_not_called()
+
     def test_invalid_exclusion_or_schema_aborts_before_sending(self):
         for text in ["phone\ninvalid\n", "wrong\n09000000000\n"]:
             self.exclusions.write_text(text)

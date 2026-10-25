@@ -32,7 +32,7 @@ This is a readable extract, not the literal JSON. The example consent records ar
 
 ## Input and permission to send
 
-CSV must be UTF-8 (BOM accepted), with distinct headers. Default name/phone columns are `first_name_per` and `selected_phone`; names may be empty. Supported mobile formats include `09…`, `9…`, `989…`, `+989…` and `00989…`, with Persian/Arabic digits and visual separators. Ambiguous numbers and embedded text are rejected.
+CSV must be UTF-8 (BOM accepted), with distinct headers. Default name/phone columns are `first_name_per` and `selected_phone`; names may be empty. Supported mobile formats include `09…`, `9…`, `989…`, `+989…` and `00989…`, with Persian/Arabic digits and visual separators. Ambiguous numbers, embedded text, tabs/newlines and oversized phone fields are rejected rather than silently stripped.
 
 Live eligibility additionally requires all of:
 
@@ -53,7 +53,7 @@ For Iranian recipients, review current [CRA guidance](https://www.cra.ir/), the 
 
 Maintain a private UTF-8 CSV with header `phone`, one number per row. It is mandatory in live mode; a reviewed empty list contains only the header. Set `SMS_EXCLUSIONS_FILE` to its path. Invalid entries abort preflight. Normalized exclusions override consent and duplicates.
 
-Operators must receive withdrawals through their own accessible channel, update this list promptly and recheck it before each run. The tool does not receive inbound SMS or implement automatic STOP handling. Do not continue a running campaign after learning of a withdrawal; interrupt it and reconcile before proceeding.
+Operators must receive withdrawals through their own accessible channel, update this list promptly and recheck it before each run. The tool also compares the bounded exclusion-file digest **before every outbound submission** and stops subsequent requests if that file changes or becomes unreadable. This is a fail-closed snapshot check, not instantaneous opt-out reception: there is still a race between checking and sending, and no automatic inbound STOP handling. Do not continue a running campaign after learning of a withdrawal; interrupt it and reconcile before proceeding.
 
 ### Validation, duplicates and personalization
 
@@ -119,7 +119,7 @@ API acceptance percentage = current-run accepted ÷ (accepted + rejected + unkno
 | 2 | Invalid configuration/input or authorization; no live submission starts after failed preflight |
 | 3 | Accepted and rejected results, including retained journal results |
 | 4 | Rejected results with no accepted results |
-| 5 | Unknown result, interruption or operational failure; reconcile before rerunning |
+| 5 | Unknown result, interruption, changed/unreadable opt-out file or operational failure; reconcile before rerunning |
 
 Unknown outcomes take precedence. Failure diagnostics are fixed, redacted classifications; stdout contains JSON events without recipient data. Argparse usage errors also use exit 2.
 
@@ -142,7 +142,7 @@ ruff check --select E9,F63,F7,F82 .
 python -m pip_audit -r requirements.txt
 ```
 
-CI checks Python 3.10–3.14, static correctness, measured coverage including `main.py`, dependencies, tracked dataset hygiene and a non-root Docker Dry Run with networking disabled. Unit tests use synthetic recipients and mocked HTTP; no gateway credentials are supplied.
+CI checks Python 3.10–3.14, static correctness, measured coverage including `main.py`, dependencies, tracked dataset hygiene and a non-root Python 3.14 Docker Dry Run with networking disabled. Unit tests use synthetic recipients and mocked HTTP; no gateway credentials are supplied.
 
 ```bash
 docker build -t batch-sms-campaign-automation .

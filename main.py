@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 
 def result_exit_code(result):
+    if result.exclusion_file_changed:
+        return 5
     if result.unknown or result.previous_unknown:
         return 5
     if result.rejected or result.previous_rejected:

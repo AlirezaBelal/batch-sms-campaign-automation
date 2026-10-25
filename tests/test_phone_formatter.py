@@ -29,6 +29,11 @@ class IranianMobileNormalizationTests(unittest.TestCase):
             "+98+9121234567",
             "+09121234567",
             "+9121234567",
+            "09121234567\n",
+            "\t09121234567",
+            "0912\r1234567",
+            "09121234\v567",
+            " " * 70 + "09121234567",
         ):
             with self.subTest(value=value):
                 with self.assertRaises(ValueError):
