@@ -157,3 +157,9 @@ No environment file or credentials are needed for this demonstration. Live conta
 ## Structure and limits
 
 `main.py` composes strict `config.py`, bounded `campaign.py`, the local `manifest.py` journal and `sms_service/sms_sender.py`; `utils/` contains normalization and logging. No CRM, database, queue framework, scheduling, inbound opt-out responder or multi-provider broker is added. Public source and examples are MIT licensed.
+
+## Live browser demo
+
+[Open the GitHub Pages demo](https://alirezabelal.github.io/batch-sms-campaign-automation/)
+
+The browser-local dry run demonstrates personalization, consent checks, opt-outs, duplicate suppression, validation, and an illustrative planning estimate. It accepts no phone-number column and cannot connect to an SMS gateway or send messages.
