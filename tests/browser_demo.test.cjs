@@ -24,6 +24,34 @@ test('no message is queued when no sample recipient is eligible', () => {
   assert.match(result.errors[0], /No eligible/);
 });
 
+test('any denial or opt-out excludes the entire duplicate identity in either order', () => {
+  for (const field of ['consent', 'opt_out']) {
+    const good = {...sampleContacts[0]};
+    const denied = {...good, [field]: field === 'opt_out'};
+    for (const contacts of [[good, denied], [denied, good]]) {
+      const result = dryRun(contacts, defaultTemplate);
+      assert.equal(result.summary.queued, 0);
+      assert(result.rows.every(row => row.preview === '' && row.decision.startsWith('Excluded')));
+    }
+  }
+});
+
+test('CSV parser rejects ambiguous headers, malformed input and oversized files', () => {
+  const header = 'id,first_name,course,consent,opt_out\n';
+  for (const csv of ['', header, header+'a,"broken', header+'a,Ari,Web,maybe,no', header+'a,Ari,Web,true,false,extra', header.replace('course','id')+'a,Ari,Web,true,false']) assert.throws(() => parseCsv(csv));
+  assert.throws(() => parseCsv('x'.repeat(1048577)), /1 MiB/);
+  assert.throws(() => parseCsv(header+'a,'+'x'.repeat(257)+',Web,true,false'), /256/);
+});
+
+test('website leads with installation and explains Android and demo boundaries', () => {
+  const page = fs.readFileSync('docs/index.html', 'utf8');
+  assert.match(page, /href="#install">Get Started/);
+  assert(page.indexOf('id="android"') < page.indexOf('id="install"'));
+  assert(page.indexOf('id="install"') < page.indexOf('id="simulator"'));
+  for (const claim of ['SMS Gateway for Android', 'Windows · PowerShell', 'macOS · Terminal', 'Linux · shell', 'python main.py', 'SMS_DRY_RUN=false', '--confirm-campaign', 'not interchangeable', 'no SMS sending']) assert(page.includes(claim), claim);
+  assert.doesNotMatch(page, />Send SMS</i);
+});
+
 test('local consent ledger validates booleans, limits and forbidden phone columns', () => {
   const csv = '\uFEFFid,first_name,course,consent,opt_out\r\na-1,Ari,Python,true,false\r\na-1,Bea,Design,yes,no\r\na-3,Cal,Web,no,false\r\n';
   const rows = parseCsv(csv);

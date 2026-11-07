@@ -64,3 +64,6 @@ reports/
 htmlcov/
 campaign-state/
 *.lock
+
+# Generated browser and Lighthouse evidence is uploaded as workflow artifacts.
+evidence/

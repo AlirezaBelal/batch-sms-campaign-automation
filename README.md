@@ -4,6 +4,45 @@
 
 A small Python CLI for previewing personalized, consent-based SMS campaigns and deliberately submitting them to **SMS Gateway for Android**. Dry Run is the default. Gateway acceptance is **not carrier delivery**.
 
+[Product website and OS-specific Quick Start](https://alirezabelal.github.io/batch-sms-campaign-automation/) · [Android requirements](#android-gateway-requirements) · [Input and consent](#input-and-permission-to-send) · [Authorization](#optional-live-execution-restricted-and-explicit) · [Safe reruns](#safe-reruns-and-local-journal)
+
+## Android gateway requirements
+
+Real submission requires a separate compatible **Android phone**, the external
+[SMS Gateway for Android app](https://github.com/capcom6/android-sms-gateway),
+appropriate SMS permissions, a suitable SIM/mobile service, an available gateway
+service and operator/carrier authorization. Python runs on your computer or
+controlled runtime; installing this repository does not install the phone app.
+It is not an iOS gateway. No phone or credentials are needed for the default Dry Run.
+
+Architecture: Python preflight and deliberate authorization → authenticated
+gateway API → Android app → SIM/carrier → authorized recipient, if delivered.
+API acceptance, queueing, device processing and carrier delivery are separate.
+This CLI does not poll delivery receipts or guarantee delivery.
+
+Follow the official [installation guide](https://docs.sms-gate.app/installation/)
+and [getting-started overview](https://docs.sms-gate.app/getting-started/).
+The upstream app is not developed or distributed by this repository; no APK is
+hosted here. Follow its current device-specific guidance rather than treating
+this project as an Android installer.
+
+- [Public Cloud Server](https://docs.sms-gate.app/getting-started/public-cloud-server/):
+  provider API routes queued messages to a registered, connected Android device.
+  Evaluate third-party processing of numbers/content and the provider's privacy
+  terms. This CLI does not implement the provider's optional end-to-end encryption.
+- [Local Server](https://docs.sms-gate.app/getting-started/local-server/): direct
+  controlled-network access to the device. The official local example uses HTTP;
+  **this CLI requires HTTPS for live endpoints**. Use a trusted TLS proxy or
+  equivalent secure configuration, set the full compatible `SMS_API_ENDPOINT`,
+  and verify deployed API routes/version. Do not disable certificate validation.
+
+The official sending guide still documents the existing `textMessage.text`,
+`phoneNumbers`, TTL and Basic-auth request contract. The current authentication
+guide recommends JWT for new integrations but retains Basic for compatibility;
+this client implements Basic, not JWT. No gateway connection was made to verify
+an account or device. Device availability, carrier policies, charges and sending
+restrictions remain operator responsibilities.
+
 ## Quick start: no SMS, credentials or runtime network
 
 Requires Python 3.10–3.14. Dependency installation needs package access; the installed demonstration runs offline.
@@ -158,8 +197,18 @@ No environment file or credentials are needed for this demonstration. Live conta
 
 `main.py` composes strict `config.py`, bounded `campaign.py`, the local `manifest.py` journal and `sms_service/sms_sender.py`; `utils/` contains normalization and logging. No CRM, database, queue framework, scheduling, inbound opt-out responder or multi-provider broker is added. Public source and examples are MIT licensed.
 
-## Live browser demo
+## Product website and optional browser Dry Run
 
-[Open the GitHub Pages demo](https://alirezabelal.github.io/batch-sms-campaign-automation/)
+[Open the product and installation guide](https://alirezabelal.github.io/batch-sms-campaign-automation/)
 
 The browser-local dry run demonstrates personalization, consent checks, opt-outs, duplicate suppression, validation, and an illustrative planning estimate. It accepts no phone-number column and cannot connect to an SMS gateway or send messages.
+
+The secondary [Campaign Lab](https://alirezabelal.github.io/batch-sms-campaign-automation/#simulator)
+uses fictional identity fields `id, first_name, course, consent, opt_out` and
+`{{first_name}}` / `{{course}}` tokens. Its schema and engine are not interchangeable
+with Python's consent metadata and `{name}` template. Any missing-consent or
+opt-out row excludes the entire ID, in either duplicate-row order. Browser cost
+units are illustrative, not Python segmentation or provider billing. CSV input
+is bounded to 1 MiB/1,000 rows; values are rendered literally and exported with
+spreadsheet-formula escaping. Reset invalidates unfinished imports. Nothing is
+uploaded or persisted. Use fictional fields, not private recipient data.
