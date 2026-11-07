@@ -136,6 +136,9 @@ consent/opt-outs, invalid template, 1 MiB/1,000-row limits, export escaping,
 literal HTML-like values and Reset race. No external requests or console errors.
 The Pages verify job now runs this focused isolated suite before deployment;
 runtime dependencies are unchanged. Artifacts are retained for 14 days.
+The browser verification job pins Ubuntu 24.04, supported by the isolated
+Playwright version. The first PR attempt exposed ubuntu-latest moving to an
+unsupported 26.04 image; no application test or protection was relaxed.
 
 Local Lighthouse: mobile 100/100/100/92; desktop 95/100/100/92
 (performance/accessibility/best-practices/SEO). Local SEO notes missing root
