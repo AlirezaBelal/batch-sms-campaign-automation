@@ -3,10 +3,10 @@ name: GitHub Pages
 on:
   push:
     branches: [master]
-    paths: ['docs/**', 'tests/browser_demo.test.cjs', '.github/workflows/pages.yml']
+    paths: ['docs/**', 'tests/browser_demo.test.cjs', 'scripts/qa-browser.mjs', '.github/workflows/pages.yml']
   pull_request:
     branches: [master]
-    paths: ['docs/**', 'tests/browser_demo.test.cjs', '.github/workflows/pages.yml']
+    paths: ['docs/**', 'tests/browser_demo.test.cjs', 'scripts/qa-browser.mjs', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:
@@ -21,6 +21,20 @@ jobs:
         with:
           node-version: 22
       - run: node --test tests/browser_demo.test.cjs
+      - name: Install isolated browser QA tools
+        run: |
+          mkdir -p "$RUNNER_TEMP/sms-browser"
+          cp scripts/qa-browser.mjs "$RUNNER_TEMP/sms-browser/run.mjs"
+          npm install --prefix "$RUNNER_TEMP/sms-browser" --no-save --package-lock=false playwright@1.56.1 @axe-core/playwright@4.10.2
+          "$RUNNER_TEMP/sms-browser/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Verify product, offline demo and seven widths
+        run: node "$RUNNER_TEMP/sms-browser/run.mjs"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: sms-product-browser-qa
+          path: evidence/browser/
+          retention-days: 14
   deploy:
     if: github.event_name != 'pull_request'
     needs: verify

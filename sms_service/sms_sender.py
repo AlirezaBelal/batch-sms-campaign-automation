@@ -87,7 +87,10 @@ class SMSGatewayClient:
         except requests.RequestException:
             result = Submission("unknown", "transport_error", True)
         else:
-            result = self._classify(response)
+            try:
+                result = self._classify(response)
+            finally:
+                response.close()
         logger.info("Gateway outcome: %s (%s)", result.status, result.reason)
         return result
 

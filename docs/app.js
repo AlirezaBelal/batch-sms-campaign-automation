@@ -63,11 +63,12 @@ function dryRun(contacts, template) {
   const errors = validateTemplate(template);
   if (errors.length) return { errors, rows: [], summary: { total: contacts.length, queued: 0, excluded: contacts.length, duplicates: 0, costUnits: 0 } };
   const seen = new Set(), rows = [], optOutIds = new Set(contacts.filter(c => c.opt_out).map(c => c.id));
+  const deniedIds = new Set(contacts.filter(c => !c.consent).map(c => c.id));
   let duplicates = 0, queued = 0;
   for (const contact of contacts) {
     let decision;
     if (optOutIds.has(contact.id)) decision = 'Excluded · opted out';
-    else if (!contact.consent) decision = 'Excluded · no consent';
+    else if (deniedIds.has(contact.id)) decision = 'Excluded · no consent';
     else if (seen.has(contact.id)) { decision = 'Excluded · duplicate'; duplicates++; }
     else { decision = 'Queued in dry run'; seen.add(contact.id); queued++; }
     rows.push({ ...contact, decision, preview: decision === 'Queued in dry run' ? personalize(template, contact) : '' });
@@ -83,7 +84,7 @@ if (typeof module !== 'undefined') module.exports = { sampleContacts, defaultTem
 if (typeof document !== 'undefined') {
   const message = document.querySelector('#message'), results = document.querySelector('#results'), errors = document.querySelector('#errors'), empty = document.querySelector('#empty'), run = document.querySelector('#run');
   const file = document.querySelector('#contacts-file'), processFile = document.querySelector('#process-file'), exportButton = document.querySelector('#export-plan');
-  let importedContacts = null, planRows = [];
+  let importedContacts = null, planRows = [], importGeneration = 0;
   function render(result) {
     planRows = result.rows;
     exportButton.disabled = planRows.length === 0;
@@ -102,6 +103,7 @@ if (typeof document !== 'undefined') {
   run.addEventListener('click', () => render(dryRun(sampleContacts, message.value)));
   processFile.addEventListener('click', () => { if (importedContacts) render(dryRun(importedContacts, message.value)); });
   file.addEventListener('change', async () => {
+    const generation = ++importGeneration;
     importedContacts = null; processFile.disabled = true; exportButton.disabled = true; planRows = [];
     errors.hidden = true; errors.textContent = ''; results.replaceChildren(); empty.hidden = true;
     for (const id of ['total', 'queued', 'excluded', 'duplicates', 'cost']) document.querySelector(`#metric-${id}`).textContent = '—';
@@ -109,8 +111,8 @@ if (typeof document !== 'undefined') {
     if (!chosen) return;
     if (chosen.size > MAX_CSV_BYTES) { errors.textContent = 'Choose a CSV file smaller than 1 MiB.'; errors.hidden = false; document.querySelector('#status').textContent = 'File rejected · size limit'; return; }
     document.querySelector('#status').textContent = 'Reading the selected CSV in this tab…';
-    try { importedContacts = parseCsv(await chosen.text()); processFile.disabled = false; document.querySelector('#status').textContent = `Loaded ${importedContacts.length} rows in this tab · ready for dry run`; }
-    catch (error) { importedContacts = null; errors.textContent = error instanceof Error ? error.message : 'The CSV could not be read.'; errors.hidden = false; document.querySelector('#status').textContent = 'File not processed'; }
+    try { const text = await chosen.text(); if (generation !== importGeneration) return; importedContacts = parseCsv(text); processFile.disabled = false; document.querySelector('#status').textContent = `Loaded ${importedContacts.length} rows in this tab · ready for dry run`; }
+    catch (error) { if (generation !== importGeneration) return; importedContacts = null; errors.textContent = error instanceof Error ? error.message : 'The CSV could not be read.'; errors.hidden = false; document.querySelector('#status').textContent = 'File not processed'; }
   });
   exportButton.addEventListener('click', () => {
     if (!planRows.length) return;
@@ -118,6 +120,6 @@ if (typeof document !== 'undefined') {
     const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'campaign-dry-run.csv'; link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 0);
   });
-  document.querySelector('#reset').addEventListener('click', () => { message.value = defaultTemplate; file.value = ''; importedContacts = null; processFile.disabled = true; exportButton.disabled = true; planRows = []; updateCounter(); results.replaceChildren(); errors.hidden = true; errors.textContent = ''; empty.hidden = true; for (const id of ['total', 'queued', 'excluded', 'duplicates', 'cost']) document.querySelector(`#metric-${id}`).textContent = '—'; document.querySelector('#status').textContent = 'Ready · no messages have been prepared'; message.focus(); });
+  document.querySelector('#reset').addEventListener('click', () => { importGeneration++; message.value = defaultTemplate; file.value = ''; importedContacts = null; processFile.disabled = true; exportButton.disabled = true; planRows = []; updateCounter(); results.replaceChildren(); errors.hidden = true; errors.textContent = ''; empty.hidden = true; for (const id of ['total', 'queued', 'excluded', 'duplicates', 'cost']) document.querySelector(`#metric-${id}`).textContent = '—'; document.querySelector('#status').textContent = 'Ready · no messages have been prepared'; message.focus(); });
   updateCounter();
 }

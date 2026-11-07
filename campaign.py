@@ -131,7 +131,7 @@ class CampaignRunner:
             for row in _csv_rows(self.settings.exclusions_file, {"phone"}):
                 try:
                     exclusions.add(
-                        self.gateway.validate_recipient(row["phone"].strip())
+                        self.gateway.validate_recipient(row["phone"])
                     )
                 except ValueError:
                     raise ValueError(
@@ -148,7 +148,7 @@ class CampaignRunner:
         for row in rows:
             try:
                 phone = self.gateway.validate_recipient(
-                    row[self.settings.phone_column].strip()
+                    row[self.settings.phone_column]
                 )
                 message = self.gateway.render_message(
                     row[self.settings.name_column].strip()

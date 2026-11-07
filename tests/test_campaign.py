@@ -71,6 +71,22 @@ class CampaignRunnerTests(unittest.TestCase):
             self.run_campaign(live=True)
         self.gateway.submit_message.assert_not_called()
 
+    def test_csv_phone_controls_are_rejected_before_normalization(self):
+        for value in ['"09000000000\n"', '"\t09000000000"', '"09000000000\r"']:
+            with self.subTest(value=value):
+                self.csv.write_text(HEADER + ROW.replace("09000000000", value))
+                self.assertEqual(self.run_campaign().invalid_records, 1)
+                with self.assertRaises(ValueError):
+                    self.run_campaign(live=True)
+        self.gateway.submit_message.assert_not_called()
+
+    def test_exclusion_csv_phone_controls_abort_preflight(self):
+        for value in ['"09000000000\n"', '"\t09000000000"']:
+            self.exclusions.write_text("phone\n" + value + "\n")
+            with self.assertRaises(ValueError):
+                self.run_campaign(live=True)
+        self.gateway.submit_message.assert_not_called()
+
     def test_dry_run_validates_and_renders_without_gateway_submission(self):
         with patch(
             "requests.sessions.Session.request",
@@ -455,6 +471,23 @@ class SMSGatewayClientTests(unittest.TestCase):
             result = client.submit_message("09000000000", "Hello")
         self.assertEqual((result.status, result.reason), ("rejected", "rate_limited"))
         self.assertNotIn("private phone", str(logs.output))
+
+    def test_response_closed_for_positive_and_negative_acknowledgements(self):
+        client = self.make_client()
+        for code in [202, 429, 503]:
+            response = self.response(code)
+            client.session.post = Mock(return_value=response)
+            client.submit_message("09000000000", "Hello")
+            response.close.assert_called_once()
+
+    def test_response_closed_when_classification_raises(self):
+        client = self.make_client()
+        response = self.response()
+        client.session.post = Mock(return_value=response)
+        with patch.object(client, "_classify", side_effect=RuntimeError("fixture")):
+            with self.assertRaises(RuntimeError):
+                client.submit_message("09000000000", "Hello")
+        response.close.assert_called_once()
 
     def test_http_outcomes_and_schema_validation(self):
         for code, expected in [
